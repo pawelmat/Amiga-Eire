@@ -1,0 +1,112 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "amiga-assembly",
+            "request": "launch",
+            "name": "WinUAE Debug",
+            "stopOnEntry": true,
+            "program": "${workspaceFolder}/uae/dh0/eire",
+            "remoteProgram": "SYS:eire",
+            "emulatorType": "winuae",
+            "emulatorArgs": [
+                "-s", "filesystem=rw,dh0:${workspaceFolder}/uae/dh0",
+                "-s", "gfx_width=1280",
+                "-s", "gfx_height=960"              ],
+            "preLaunchTask": "amigaassembly: build_debug"
+        },
+        {
+            "type": "amiga-assembly",
+            "request": "launch",
+            "name": "WinUAE Debug (Fast)",
+            "stopOnEntry": true,
+            "program": "${workspaceFolder}/uae/dh0/eire",
+            "remoteProgram": "SYS:eire",
+            "emulatorType": "winuae",
+            "emulatorArgs": [
+                "-s", "filesystem=rw,dh0:${workspaceFolder}/uae/dh0",
+                "-s", "cpu_speed=real",
+                "-s", "cpu_cycle_exact=true",
+                "-s", "cpu_memory_cycle_exact=true",
+                "-s", "blitter_cycle_exact=true",
+                "-s", "cpu_multiplier=16",
+                "-s", "cycle_exact=true",
+                "-s", "gfx_width=1280",
+                "-s", "gfx_height=960"  
+            ],
+            "preLaunchTask": "amigaassembly: build_debug"
+        },
+        {
+            "type": "amiga-assembly",
+            "request": "launch",
+            "name": "WinUAE Launch",
+            "noDebug": true,
+            "program": "${workspaceFolder}/uae/dh0/eire",
+            "remoteProgram": "SYS:eire",
+            "emulatorType": "winuae",
+            "emulatorArgs": [
+                "-s", "filesystem=rw,dh0:${workspaceFolder}/uae/dh0",
+                "-s", "gfx_width=1280",
+                "-s", "gfx_height=960"  
+            ],
+            "preLaunchTask": "amigaassembly: build_debug"
+        },
+        {
+            "type": "amiga-assembly",
+            "request": "launch",
+            "name": "WinUAE Launch (Fast)",
+            "noDebug": true,
+            "program": "${workspaceFolder}/uae/dh0/eire",
+            "remoteProgram": "SYS:eire",
+            "emulatorType": "winuae",
+            "emulatorArgs": [
+                "-s", "filesystem=rw,dh0:${workspaceFolder}/uae/dh0",
+                "-s", "cpu_speed=real",
+                "-s", "cpu_cycle_exact=true",
+                "-s", "cpu_memory_cycle_exact=true",
+                "-s", "blitter_cycle_exact=true",
+                "-s", "cpu_multiplier=16",
+                "-s", "cycle_exact=true",
+                "-s", "gfx_width=1280",
+                "-s", "gfx_height=960"             
+            ],
+            "preLaunchTask": "amigaassembly: build_debug"
+        },        {
+            "type": "amiga-assembly",
+            "request": "launch",
+            "name": "WinUAE Release",
+            "noDebug": true,
+            "program": "${workspaceFolder}/uae/dh0/eire",
+            "remoteProgram": "SYS:eire",
+            "emulatorType": "winuae",
+            "emulatorArgs": [
+                "-s", "filesystem=rw,dh0:${workspaceFolder}/uae/dh0",
+                "-s", "gfx_width=1280",
+                "-s", "gfx_height=960"  
+            ],
+            "preLaunchTask": "amigaassembly: build_release"
+        },
+        {
+            "type": "amiga-assembly",
+            "request": "launch",
+            "name": "WinUAE Release (Fast)",
+            "noDebug": true,
+            "program": "${workspaceFolder}/uae/dh0/eire",
+            "remoteProgram": "SYS:eire",
+            "emulatorType": "winuae",
+            "emulatorArgs": [
+                "-s", "filesystem=rw,dh0:${workspaceFolder}/uae/dh0",
+                "-s", "cpu_speed=real",
+                "-s", "cpu_cycle_exact=true",
+                "-s", "cpu_memory_cycle_exact=true",
+                "-s", "blitter_cycle_exact=true",
+                "-s", "cpu_multiplier=16",
+                "-s", "cycle_exact=true",
+                "-s", "gfx_width=1280",
+                "-s", "gfx_height=960"  
+            ],
+            "preLaunchTask": "amigaassembly: build_release_nolinker"
+        }
+
+    ]
+}

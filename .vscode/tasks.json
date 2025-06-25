@@ -1,0 +1,131 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "amigaassembly",
+			"vasm": {
+				"enabled": true,
+				"command": "${config:amiga-assembly.binDir}/vasmm68k_mot",
+				"args": [
+					"-m68000",
+					"-Fhunk",
+					"-linedebug"
+				]
+			},
+			"vlink": {
+				"enabled": true,
+				"command": "${config:amiga-assembly.binDir}/vlink",
+				"includes": "*.{s,ss,S,asm,ASM}",
+				"excludes": "",
+				"exefilename": "../uae/dh0/eire",
+				"entrypoint": "eire.ss",
+				"args": [
+					"-bamigahunk",
+					"-Bstatic"
+				]
+			},
+			"problemMatcher": [],
+			"label": "amigaassembly: build_debug",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "amigaassembly",
+			"vasm": {
+				"enabled": true,
+				"command": "${config:amiga-assembly.binDir}/vasmm68k_mot",
+				"args": [
+					"-m68000",
+					"-Fhunk",
+					"-nosym"
+				]
+			},
+			"vlink": {
+				"enabled": true,
+				"command": "${config:amiga-assembly.binDir}/vlink",
+				"includes": "*.{s,ss,S,asm,ASM}",
+				"excludes": "",
+				"exefilename": "../uae/dh0/eire",
+				"entrypoint": "eire.ss",
+				"args": [
+					"-bamigahunk",
+					"-Bstatic",
+					"-s"
+				]
+			},
+			"problemMatcher": [],
+			"label": "amigaassembly: build_release",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "amigaassembly",
+			"vasm": {
+				"enabled": true,
+				"command": "${config:amiga-assembly.binDir}/vasmm68k_mot",
+				"args": [
+					"-m68000",
+					"-Fhunkexe",
+					"-nosym"
+				]
+			},
+			"vlink": {
+				"enabled": true,
+				"command": "${config:amiga-assembly.binDir}/vlink",
+				"includes": "*.{s,ss,S,asm,ASM}",
+				"excludes": "",
+				"exefilename": "../uae/dh0/eire",
+				"entrypoint": "eire.ss",
+				"args": [
+
+					"-bamigahunk",
+					"-Bstatic",
+					"-s"
+				]
+			},
+			"problemMatcher": [],
+			"label": "amigaassembly: build_release_nolinker",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+            "type": "shell",
+            "label": "amigaassembly: copy build",
+            "command" : "cp",
+            "args": ["-v","${workspaceFolder}/uae/dh0/eire","${workspaceFolder}/build/eire"],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+        },
+		{
+            "type": "shell",
+            "label": "amigaassembly: prepare assets",
+            "command" : "./assets_prep.cmd",
+			"options": {
+				"cwd": "${workspaceFolder}/assets"
+			},			
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+        },		
+		{
+            "type": "shell",
+            "label": "amigaassembly: shrink",
+            "command" : "tools/shrinkler",
+            "args_old": ["-9","-f","DFF180","-t","\\\"Eire: 40k Amiga 500 OCS intro by Suspect and Scoopex, Boom Party 2025\\\"","${workspaceFolder}/uae/dh0/eire","${workspaceFolder}/release/eire"],
+            "args": ["-9","-f","DFF180","-t","\\\"Eire: 40k Amiga 500 OCS intro by Suspect and Scoopex, Boom Party 2025\\\"","${workspaceFolder}/uae/dh0/eire","${workspaceFolder}/uae/dh0/eire.exe"],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+        }
+	]
+}
