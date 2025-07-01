@@ -15,10 +15,10 @@
 			"vlink": {
 				"enabled": true,
 				"command": "${config:amiga-assembly.binDir}/vlink",
-				"includes": "*.{s,ss,S,asm,ASM}",
+				"includes": "eire.s",
 				"excludes": "",
 				"exefilename": "../uae/dh0/eire",
-				"entrypoint": "eire.ss",
+				"entrypoint": "eire.s",
 				"args": [
 					"-bamigahunk",
 					"-Bstatic"
@@ -45,10 +45,10 @@
 			"vlink": {
 				"enabled": true,
 				"command": "${config:amiga-assembly.binDir}/vlink",
-				"includes": "*.{s,ss,S,asm,ASM}",
+				"includes": "eire.s",
 				"excludes": "",
 				"exefilename": "../uae/dh0/eire",
-				"entrypoint": "eire.ss",
+				"entrypoint": "eire.s",
 				"args": [
 					"-bamigahunk",
 					"-Bstatic",
@@ -76,10 +76,10 @@
 			"vlink": {
 				"enabled": true,
 				"command": "${config:amiga-assembly.binDir}/vlink",
-				"includes": "*.{s,ss,S,asm,ASM}",
+				"includes": "eire.s",
 				"excludes": "",
 				"exefilename": "../uae/dh0/eire",
-				"entrypoint": "eire.ss",
+				"entrypoint": "eire.s",
 				"args": [
 
 					"-bamigahunk",
@@ -120,7 +120,6 @@
             "type": "shell",
             "label": "amigaassembly: shrink",
             "command" : "tools/shrinkler",
-            "args_old": ["-9","-f","DFF180","-t","\\\"Eire: 40k Amiga 500 OCS intro by Suspect and Scoopex, Boom Party 2025\\\"","${workspaceFolder}/uae/dh0/eire","${workspaceFolder}/release/eire"],
             "args": ["-9","-f","DFF180","-t","\\\"Eire: 40k Amiga 500 OCS intro by Suspect and Scoopex, Boom Party 2025\\\"","${workspaceFolder}/uae/dh0/eire","${workspaceFolder}/uae/dh0/eire.exe"],
 			"group": {
 				"kind": "build",

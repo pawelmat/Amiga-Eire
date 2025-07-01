@@ -1,46 +1,12 @@
-; Eire - 40k intro for the Boom 2025 party, Tuchola, Poland
 ; Pawel Matusz / Kane (kane@konto.pl)
-; 25/06/2025 - TBD
+; OS related functions
+; 
 
-    TTL         "Eire"
-
-    INCDIR      "include"
-    INCLUDE     "custom.i"
-    INCLUDE     "macros.i"
-
-; ----------- CODE section
-    code
-s:
-        movem.l d0-a6,-(sp)
-        lea     configBlock,a6
-        lea     configBlockAddr(pc),a1
-        move.l  a6,(a1)
-        bsr     OsSave
-
-        lea		CUSTOM,a0
-		lea		SPR0POS(a0),a1
-		moveq	#8-1,d0					; clear all sprites so that they don't randomly "blink" on some screens
-		moveq	#0,d1
-.clspr:		
-		move.l	d1,(a1)+
-		move.l	d1,(a1)+
-		dbf		d0,.clspr
-
-
-        TESTLMB
-
-exit:
-        bsr     OsRestore
-        movem.l (sp)+,d0-a6
-        clr     d0                      ; exit code
-        rts
-
-
-; ----------- OS save / restore
+; ------------------------------------------
+; Save key OS variables, interrupts etc. so that later we can graecfull exit back to the OS
 OsSave:
-    	;get vbr base
-        move.l  configBlockAddr(pc),a4
-		clr.l	VBR_BASE(a4)
+        lea     configBlock(pc),a4
+		clr.l	VBR_BASE(a4)                ;get vbr base
 		move.l	4.w,a6                      ; execbase
 		move	$128(a6),d0			        ; AttnFlags
         andi    #$f,d0                      ; lower 4 bits specify the CPU type (up to 040)
@@ -68,11 +34,11 @@ OsSave:
 		move.w	d0,OS_INTENA(a4)
 		move.w 	DMACONR(a0),d0			    ; os dmacon: 03f0: DMAEN | BPLEN | COPEN | BLTEN | SPREN | DSKEN
 		andi	#$0ff0,d0				    ; prevent showing read only bits and remove audio
-		ori		#DMAF_SETCLR+DMAF_RASTER,d0	; add the "set" bit + "bpl" bit: 83f0
+		ori		#DMAF_SETCLR,d0				; add the "set" bit
 		move.w	d0,OS_DMACON(a4)
 		VBLANK
 		move.w	#$7fff,d0
-		move.w	d0,DMACON(a0)	            ; dma off
+		move.w	d0,DMACON(a0)	            ; all dma off
 		move.w	d0,INTENA(a0)	            ; disable interrupts
 		move.w	d0,INTREQ(a0)	            ; clear pending ints
 
@@ -81,30 +47,37 @@ OsSave:
 		move.l	$68(a5),OS_INT_PORTS(a4)	; L2
 		move.l	$6c(a5),OS_INT_VERTB(a4)	; L3
 		move.l	$78(a5),OS_INT_LEV6(a4)		; L6
+
+		lea		SPR0POS(a0),a1              ; clear all sprites so that they don't randomly "blink" on some screens (even though sprite DMA should be off)
+		moveq	#16-1,d0					
+		moveq	#0,d1
+.clspr:		
+		move.l	d1,(a1)+
+		dbf		d0,.clspr
+
 		rts
 
+; ------------------------------------------
+; Restore all OS variables, interrupts etc. It is assumed that stack is be left intact 
 OsRestore:
-		move.l  configBlockAddr(pc),a4
+        lea     configBlock(pc),a4
 		lea		CUSTOM,a0
 		move.w	#$7fff,d0
 		move.w	d0,DMACON(a0)	            ; dma off
 		move.w	d0,INTENA(a0)	            ; disable ints
 		move.w	d0,INTREQ(a0)	            ; clear pending ints
-        clr     d0
-		move	d0,AUD0VOL(a0)			    ; all volume to 0
-		move	d0,AUD1VOL(a0)
-		move	d0,AUD2VOL(a0)
-		move	d0,AUD3VOL(a0)
+        clr.l    d0
+		move.l	d0,AUD0VOL(a0)			    ; all volume to 0 and dat to 0
+		move.l	d0,AUD1VOL(a0)
+		move.l	d0,AUD2VOL(a0)
+		move.l	d0,AUD3VOL(a0)
 		move.w	#$00ff,ADKCON(a0)		    ; clear audio         
 
 	    ;restore ints pointers (PORTS)
 		move.l	VBR_BASE(a4),a3	            ;get vbr base
-		move.l	OS_INT_PORTS(a4),d0			; L2
-		move.l	d0,$68(a3)
-		move.l	OS_INT_VERTB(a4),d0			; L3
-		move.l	d0,$6c(a3)
-		move.l	OS_INT_LEV6(a4),d0			; L6
-		move.l	d0,$78(a3)
+		move.l	OS_INT_PORTS(a4),$68(a3)	; L2
+		move.l	OS_INT_VERTB(a4),$6c(a3)	; L3
+		move.l	OS_INT_LEV6(a4),$78(a3)		; L6
 
 	    ;restore hardware regs
 		move.w	OS_INTENA(a4),INTENA(a0)
@@ -118,10 +91,12 @@ OsRestore:
 		move.l	OS_VIEW(a4),a1
 		jsr		-222(a6)	;gfx LoadView(a1 - view)
 		jsr		-270(a6)	;gfx WaitTOF()
+		jsr		-270(a6)	;gfx WaitTOF()
 
 	    ;restore system clist .gb_copinit
-		;move.l	$26(a6),COP1LC(a0)
-		;move.l	$2a(a6),COP2LC(a0)
+		lea		CUSTOM,a0
+		move.l	$26(a6),COP1LC(a0)
+		move.l	$2a(a6),COP2LC(a0)
 
 	    ;close lib
 		move.l	4.w,a6
@@ -137,7 +112,6 @@ getVbr:
 		rte
 
     EVEN
-
 ; ----------- CONFIG BLOCK indices 
 RSRESET
 OS_INTENA:			rs.w	1
@@ -151,19 +125,7 @@ VBR_BASE:			rs.l	1
 CB_LENGTH:			rs.w	0		        ; length of config block
 
 ; ----------- Local data
-    EVEN
-configBlockAddr:    dc.l    0
+configBlock: 	    ds.b	CB_LENGTH
+	EVEN
 gfxName:	        dc.b	'graphics.library',0
     EVEN
-
-end:
-;    printt "Code length:"
-;    printv (end-s)
-
-; ----------- BSS section
-    bss
- configBlock: 	    ds.b	CB_LENGTH   
-
-; ----------- DATA section
-    data
-    END

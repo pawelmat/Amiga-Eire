@@ -258,7 +258,6 @@ FMODE:              equ    $1fc
 
     IFND	HARDWARE_DMABITS_I
 HARDWARE_DMABITS_I:  SET    1
-DMAF_SETCLR:         EQU    $8000
 DMAF_AUDIO:          EQU    $000F
 DMAF_AUD0:           EQU    $0001
 DMAF_AUD1:           EQU    $0002
@@ -272,8 +271,20 @@ DMAF_RASTER:         EQU    $0100
 DMAF_MASTER:         EQU    $0200
 DMAF_BLITHOG:        EQU    $0400
 DMAF_ALL:            EQU    $01FF
-DMAF_BLTDONE:        EQU    $4000
 DMAF_BLTNZERO:       EQU    $2000
+DMAF_BLTDONE:        EQU    $4000
+DMAF_SETCLR:         EQU    $8000
+
+DMAF_DSKEN:          EQU    DMAF_DISK
+DMAF_SPREN:          EQU    DMAF_SPRITE
+DMAF_BLTEN:          EQU    DMAF_BLITTER
+DMAF_COPEN:          EQU    DMAF_COPPER
+DMAF_BPLEN:          EQU    DMAF_RASTER
+DMAF_DMAEN:          EQU    DMAF_MASTER
+DMAF_BLTPRI:         EQU    DMAF_BLITHOG
+DMAF_BZERO:          EQU    DMAF_BLTNZERO
+DMAF_BBUSY:          EQU    DMAF_BLTDONE
+
 DMAB_SETCLR:         EQU    15
 DMAB_AUD0:           EQU    0
 DMAB_AUD1:           EQU    1
@@ -308,6 +319,7 @@ INTB_PORTS:          EQU    (3)
 INTB_SOFTINT:        EQU    (2)
 INTB_DSKBLK:         EQU    (1)
 INTB_TBE:            EQU    (0)
+
 INTF_SETCLR:         EQU    (1<<15)
 INTF_INTEN:          EQU    (1<<14)
 INTF_EXTER:          EQU    (1<<13)
