@@ -4,6 +4,14 @@
 
     TTL         "Eire"
 
+; ----------- Constants
+
+MUS_BPM:		equ		125
+MUS_TPB:		equ		(3000/MUS_BPM)		; ticks per beat
+MUS_TPN:		equ		(MUS_TPB/8)			; ticks per note
+
+; ----------- Includes
+
     INCDIR      "include"
     INCLUDE     "custom.i"
     INCLUDE     "macros.i"
@@ -41,43 +49,49 @@ exit:
 ; ------------------------------------------
 ; Main L3 interrupt
 interruptL3:
-		movem.l ALL,-(sp)
-		move	CUSTOM+INTREQR,d0				; INTREQQ - which L3 interrupt was raised?
-		move	d0,d1
-		andi	#$20,d0
+		btst.b	#5,CUSTOM+INTREQR+1		; Which L3 interrupt was raised?
 		bne.s	interruptL3Vertb
-
-		andi	#$40,d1
-		beq.s	interruptL3Coper
+		btst.b	#6,CUSTOM+INTREQR+1
+		beq.s	interruptL3Copper
 
 ;blitter finished interrupt
-		;blitter code here
-		movem.l	(sp)+,ALL
-		move	#$40,$dff09c			; clear BLIT INTEREQ
-		move	#$40,$dff09c			; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
+		move	#$40,CUSTOM+INTREQ		; clear BLIT INTREQ
+		move	#$40,CUSTOM+INTREQ		; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
 		nop
 		rte
 
-; coprocessor L3 interrupt do nothing
-interruptL3Coper:
-		lea		$dff0a0,a6				; always set a6 to dff0a0 before calling LSP tick
+; copper L3 interrupt
+interruptL3Copper:
+		movem.l	d0-d2/a0-a6,-(sp)
+		lea		CUSTOM+AUD0LCH,a6		; always set a6 to dff0a0 before calling LSP tick
 		bsr		LSP_MusicPlayTick		; player music tick
-		movem.l	(sp)+,ALL
-		move	#$10,$dff09c			; clear COPER INREREQ
-		move	#$10,$dff09c			; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
+
+		lea		state_local(pc),a0
+		move	beat_next(pc),d0
+		cmp		tick_cnt-state_local(a0),d0
+		bne.s	.noBeat
+		addq	#1,beat-state_local(a0)
+		addi	#MUS_TPB,beat_next-state_local(a0)	; move to next beat
+		move	#$e5e,copper_blank+2				; flash screen on beat
+		bra.s	.cont1
+.noBeat:
+		move	#$313,copper_blank+2				; flash screen on beat
+.cont1:
+		addq	#1,tick_cnt-state_local(a0)			; increase tick (frame) counter
+
+
+		movem.l	(sp)+,d0-d2/a0-a6
+		move	#$10,CUSTOM+INTREQ		; clear COPER INTREQ
+		move	#$10,CUSTOM+INTREQ		; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
 		nop
 		rte
 
 ;vertical blank interrupt
 interruptL3Vertb:
-
-		movem.l	(sp)+,ALL
-		move	#$20,$dff09c
-		move	#$20,$dff09c		; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
+		move	#$20,CUSTOM+INTREQ
+		move	#$20,CUSTOM+INTREQ		; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
 		nop
 		rte
-
-
 
 ; ------------------------------------------
 initMusic:
@@ -94,8 +108,16 @@ initMusic:
 ; ----------- Include other code files
 
     INCLUDE     "os.s"
-	EVEN
 	INCLUDE		"LightSpeedPlayer.s"
+
+
+; ----------- Local data which can be (pc) referenced
+
+state_local:
+tick_cnt:		dc.w	0
+beat:			dc.w	0			; current beat (absolute nr from 0=first at pos00 note 00)
+beat_next:		dc.w	MUS_TPB		; next beat in ticks
+
 
 end:
     echo 		"Total code length: ", (end-s)
@@ -123,7 +145,7 @@ copper_blank:
 
 LSP_Bank:
 	EVEN
-   	INCBIN		"assets/Bartesek - Hey Simone.lsbank"
+   	INCBIN		"assets/Bartesek - Hey Simone!.lsbank"
 	EVEN
 
 ; ------------------------- DATA PUBLIC section ---------------------------------
@@ -131,7 +153,7 @@ LSP_Bank:
 
 LSP_Music:
 	EVEN
-   	INCBIN		"assets/Bartesek - Hey Simone.lsmusic"
+   	INCBIN		"assets/Bartesek - Hey Simone!.lsmusic"
 logo_Suspect:
 	EVEN
    	INCBIN		"assets/sct_73_inv.bpl"
