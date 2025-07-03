@@ -30,6 +30,22 @@ VBLANKN:        macro
                 beq.s     *-6
                 endm
 
+; Wait for raster N with bit 9 check
+VBLANKNL:       macro
+                move      d0,-(sp)
+.w1\@:          move.b    5(a0),d0
+                lsl       #8,d0
+                move.b    6(a0),d0
+                cmp.w     #\1,d0
+                bne.s     .w1\@
+.w2\@:          move.b    5(a0),d0
+                lsl       #8,d0
+                move.b    6(a0),d0
+                cmp.w     #\1,d0
+                beq.s     .w2\@
+                move     (sp)+,d0
+                endm
+
 VBLANKNS:       macro
                 cmp.b     #\1,$dff006
                 bne.s     *-6
@@ -39,6 +55,7 @@ VBLANKNS:       macro
 
 ; wait for the given nr of frames
 WAIT:           MACRO
+                move      d0,-(sp)
                 move      #\1,d0
 .w\@:
                 cmp.b     #$ff,6(a0)
@@ -46,6 +63,7 @@ WAIT:           MACRO
                 cmp.b     #$ff,6(a0)
                 beq.s     *-6
                 dbf       d0,.w\@
+                move     (sp)+,d0
                 ENDM
 
 WAITS:          MACRO

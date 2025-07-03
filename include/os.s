@@ -113,16 +113,16 @@ getVbr:
 
     EVEN
 ; ----------- CONFIG BLOCK indices 
-RSRESET
-OS_INTENA:			rs.w	1
-OS_DMACON:			rs.w	1
-OS_INT_PORTS:		rs.l	1		        ; OS L2 interrupt
-OS_INT_VERTB:		rs.l	1		        ; OS L3 interrupt
-OS_INT_LEV6:		rs.l	1		        ; OS L6 interrupt
-OS_VIEW:			rs.l	1
-GFX_LIB:			rs.l	1
-VBR_BASE:			rs.l	1
-CB_LENGTH:			rs.w	0		        ; length of config block
+	RSRESET
+	OS_INTENA:			rs.w	1
+	OS_DMACON:			rs.w	1
+	OS_INT_PORTS:		rs.l	1		        ; OS L2 interrupt
+	OS_INT_VERTB:		rs.l	1		        ; OS L3 interrupt
+	OS_INT_LEV6:		rs.l	1		        ; OS L6 interrupt
+	OS_VIEW:			rs.l	1
+	GFX_LIB:			rs.l	1
+	VBR_BASE:			rs.l	1
+	CB_LENGTH:			rs.w	0		        ; length of config block
 
 ; ----------- Local data
 configBlock: 	    ds.b	CB_LENGTH
