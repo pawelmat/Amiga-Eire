@@ -1,11 +1,26 @@
 {
 	"files": [
 		{
-			"path": "../Amiga-Citadel-Evacuation/Citadel.ss",
+			"path": "eire.s",
 			"bookmarks": [
 				{
-					"line": 149,
-					"column": 0,
+					"line": 289,
+					"column": 3,
+					"label": ""
+				},
+				{
+					"line": 325,
+					"column": 2,
+					"label": ""
+				},
+				{
+					"line": 397,
+					"column": 4,
+					"label": ""
+				},
+				{
+					"line": 650,
+					"column": 9,
 					"label": ""
 				}
 			]
