@@ -88,11 +88,22 @@ exit:
 ; Main L3 interrupt
 interruptL3:
 		btst.b	#5,CUSTOM+INTREQR+1		; Which L3 interrupt was raised?
-		bne.s	interruptL3Vertb
+		bne		interruptL3Vertb
 		btst.b	#6,CUSTOM+INTREQR+1
-		beq.s	interruptL3Copper
+		beq		interruptL3Copper
 
 ;blitter finished interrupt
+		movem.l	d0-d1/a0-a2,-(sp)
+		lea		CUSTOM,a0
+		lea		blitter_queue(pc),a1
+		move	(a1),d0
+		beq.s	.bExit						; is there a queue to process?
+		bsr		blitterQueueProcess			; process the next step in the queue
+		move	blitter_queue(pc),d0
+		bne.s	.bExit
+		move	#INTF_BLIT,INTENA(a0)		; disable blitter L3 interrupt
+.bExit:
+		movem.l	(sp)+,d0-d1/a0-a2
 		move	#$40,CUSTOM+INTREQ		; clear BLIT INTREQ
 		move	#$40,CUSTOM+INTREQ		; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
 		nop
@@ -134,6 +145,27 @@ interruptL3Vertb:
 		move	#$20,CUSTOM+INTREQ		; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
 		nop
 		rte
+
+;-----------------------------------------------------------------------
+; a0 - CUSTOM, a1 - blitter_queue, d0 - queue pointer
+blitterQueueProcess:
+		move.l	a1,a2
+		lea		(a1,d0.w),a1
+.bqLoop:
+		move	(a1)+,d0
+		bmi.s	.bqEnd
+		move	(a1)+,d1
+		move	d1,(a0,d0.w)
+		bra.s	.bqLoop
+.bqEnd:	cmpi	#-2,d0
+		beq.s	.bqStop
+		suba.l	a2,a1
+		move	a1,d0
+		move	d0,(a2)			; move on queue pos
+		rts
+.bqStop:
+		move	#0,(a2)			; queue pos -1 means no processing required
+		rts
 
 ;-----------------------------------------------------------------------
 ; Init LSP player
@@ -259,7 +291,8 @@ scrollPart:
 		bsr		logoTransformPrecalc						; prepare logo anims
 
 		move.l	mem_bss_chip(pc),a6
-		lea		Logo_trans_buffer(a6),a1
+		lea		logo_trans_frames(pc),a5
+		move.l	(a5),a1										; 1st frame = Suspect logo
 		lea		Logo_screen1(a6),a2
 		move.l	#LOGO_SIZE/4-1,d7
 .cpl1:	move.l	(a1)+,(a2)+
@@ -281,37 +314,17 @@ scrollPart:
 		moveq	#2,d0
 		bsr		transformColors
 
-; loop through the pictures
+; Main scroll loop
+.mainLoop:
+		VBLANK
 
-		lea		CUSTOM,a0 ; not needed?
-		lea		logo_trans_frames(pc),a5
-		moveq	#0,d0							; frame
-		moveq	#4,d2							; directional add
-.loop:	WAIT	4
-	move #$0f0,COLOR00(a0)
-		add		d2,d0
-
-;	move #$f00,COLOR00(a0)
-		move.l	(a5,d0.w),a1					; frame addr
-		lea		Logo_screen1(a6),a2
-		move.l	#LOGO_SIZE/16-1,d6
-.cpl2:	rept	8
-		move.w	(a1)+,(a2)+
-		endr
-		dbf		d6,.cpl2
-
-		cmpi	#(LOGO_TRANS_NR-1)*4,d0
-		beq.s	.negDir
-		cmpi	#0,d0
-		bne.s	.noLoop
-.negDir:
-		neg		d2
-		WAIT	50
-.noLoop:
-	move #$000,COLOR00(a0)
-
+		lea		logo_trans_delay(pc),a1
+		subi	#1,(a1)
+		bne.s	.noBlend
+		bsr		blendLogos
+.noBlend:
 		btst.b    #6,$bfe001
-        bne	     .loop
+        bne	     .mainLoop
 
 		lea		copper_scroll_logo_cols,a1
 		lea		logo_suspect_palette,a2
@@ -321,6 +334,126 @@ scrollPart:
 
 		rts
 
+; ------------------------------------------
+; Blend logos step
+blendLogos:
+		lea		CUSTOM,a0 ; not needed?
+		lea		logo_trans_frames(pc),a5
+.blLoop1:
+		lea		logo_trans_sched_nr(pc),a1
+		move	2(a1),d0					; current schedule offset
+		subi	#1,(a1)						; schedule type timer 0-BL_RANGE
+		bne.s	.blNrc
+		move	#2*BL_RANGE,(a1)
+		lea		logo_trans_speed(pc),a2
+		moveq	#19,d7
+		moveq	#1,d6						; re-init the speed tab
+.blClSpd:
+		move	d6,(a2)+
+		dbf		d7,.blClSpd
+		addi	#20*2+2,d0					; move to next schedule
+		cmp		#(20*2+2)*TRANS_SCHED_MAX,d0
+		bne.s	.blRc
+		moveq	#0,d0
+.blRc:	move	d0,2(a1)
+.blNrc:
+		lea		logo_trans_schedule(pc),a3
+		lea		(a3,d0.w),a3				; move to the right schedule
+
+		lea		logo_trans_delay(pc),a1
+		move	(a3)+,(a1)					; speed
+
+	move #$0f0,COLOR00(a0)
+		lea		logo_trans_speed(pc),a4
+		moveq	#0,d7						; X size in words *2
+.blIterate:
+		move	(a3),d0
+		move	(a4),d1
+		add		d1,d0							; move schedule
+		bpl.s	.bl1
+		neg		d1
+		bra.s	.bl2
+.bl1:	cmpi	#BL_RANGE,d0
+		bmi.s	.bl2
+		neg		d1
+.bl2:
+		move	d0,(a3)+
+		move	d1,(a4)+
+
+		sub		#(BL_RANGE-LOGO_TRANS_NR)/2,d0	; start transition in the middle of the counter
+		bmi		.blNoBl
+		cmpi	#LOGO_TRANS_NR,d0
+		bpl		.blNoBl
+		add		d0,d0
+		add		d0,d0
+
+		move.l	(a5,d0.w),a1					; frame addr
+		lea		(a1,d7.w),a1
+		move.l	a1,d1
+		lea		Logo_screen1(a6,d7.w),a2
+		move.l	a2,d2
+
+		lea		blitter_queue(pc),a1
+		move.l	a1,a2
+		move	(a1),d3
+		bne.s	.blNotNeg
+		moveq	#2,d3
+.blNotNeg:
+		lea		(a1,d3.w),a1					; start of free space in queue
+		tst		d0
+ 		bne.s	.blLimBlt
+		move.l	#BLTAMOD<<16+38,(a1)+
+		move.l	#BLTDMOD<<16+38,(a1)+
+		move.l	#BLTCON0<<16+$09f0,(a1)+
+		move.l	#BLTCON1<<16+0,(a1)+
+		move.l	#BLTAFWM<<16+$ffff,(a1)+
+		move.l	#BLTALWM<<16+$ffff,(a1)+
+.blLimBlt:
+		move	#BLTAPTL,(a1)+
+		move	d1,(a1)+
+		move	#BLTAPTH,(a1)+
+		swap	d1
+		move	d1,(a1)+
+		move	#BLTDPTL,(a1)+
+		move	d2,(a1)+
+		move	#BLTDPTH,(a1)+
+		swap	d2
+		move	d2,(a1)+
+		move	#BLTSIZE,(a1)+
+		move	#((LOGO_SIZE_Y*LOGO_BPL)<<6)+1,(a1)+	; logo heigth + 1 word width
+		move	#-1,(a1)+						; end step
+		suba.l	a2,a1
+		move	a1,d3
+		move	d3,(a2)							; update queue length
+
+; 		WAITBLIT
+; 		tst		d0
+; 		bne.s	.blLimBlt
+; 		move	#38,BLTAMOD(a0)				; A modulo
+; 		move	#38,BLTDMOD(a0)				; D modulo
+; 		move.l	#$09f00000,BLTCON0(a0)		; BLTCON0: LF4,5,6,7 + USEA + USED.   BLTCON1 = 0
+; 		move.l	#$ffffffff,BLTAFWM(a0)		; BLTAFWM, BLTALWM = FF..FF
+; .blLimBlt:
+; 		move.l	a1,BLTAPT(a0)				; Source A
+; 		move.l	a2,BLTDPT(a0)				; Dest D
+; 		move	#((LOGO_SIZE_Y*LOGO_BPL)<<6)+1,BLTSIZE(a0)
+
+.blNoBl:
+		addq	#2,d7
+		cmpi	#20*2,d7
+		bne		.blIterate
+
+		move	#INTF_SETCLR|INTF_BLIT,INTENA(a0)		; enable blitter L3 interrupt
+		lea		blitter_queue(pc),a1
+		move	(a1),d0
+		beq.s	.qEmpty
+		move	#-2,-2(a1,d0.w)							; end blitter queue
+		moveq	#2,d0
+		move	d0,(a1)
+		bsr		blitterQueueProcess						; kick off blitter queue processing
+.qEmpty
+	move #$000,COLOR00(a0)
+		rts
 
 ; ------------------------------------------
 ; Pre-calc log transformaiton
@@ -346,7 +479,7 @@ logoTransformPrecalc:
 		lea		Logo_trans_buffer(a6),a6			; bitplanes destination
 		moveq	#1,d7								; scaling factor
 .frameLoop:
-	move #$f00,CUSTOM+COLOR00
+	; move #$f00,CUSTOM+COLOR00
 		moveq	#0,d3
 		moveq	#30,d4
 		moveq	#-15,d0								; only up to +/- 15 is possible
@@ -385,9 +518,9 @@ logoTransformPrecalc:
 		move.l	a6,(a5)+							; save current frame and move to next one
 		adda.l	#LOGO_SIZE,a6
 
-	move #$000,CUSTOM+COLOR00
+	; move #$000,CUSTOM+COLOR00
 		addq	#1,d7
-		cmpi	#16,d7
+		cmpi	#16,d7								; total of 15 frames generated + 1 start and 1 end = 17
 		bne		.frameLoop
 		movem.l	(sp)+,ALL
 		rts
@@ -637,7 +770,7 @@ scaleColorsDiff:
 
 
 ; ----------- Local data which can be (pc) referenced
-sl:										; state_local
+sl:											; state_local
 tick_cnt:				dc.w	0			; current tick
 beat:					dc.w	0			; current beat (absolute nr from 0=first at pos00 note 00, increases every MUS_TPB)
 beat_strobe				dc.w	0			; beat strobe, lit for 1 frame at the start of the beat with the nr of the beat
@@ -648,9 +781,22 @@ mem_data_public:		dc.l	0
 mem_bss_chip:			dc.l	0
 mem_bss_public:			dc.l	0
 
-logo_trans_frames:		dcb.l	LOGO_TRANS_NR,0		; transition frame pointers and counters
-logo_trans_cnt:			dcb.b	LOGO_TRANS_NR,0
-logo_trans_cnt_last:	dcb.b	LOGO_TRANS_NR,0
+logo_trans_frames:		dcb.l	LOGO_TRANS_NR,0		; transition frame pointers
+
+BL_RANGE = 3*MUS_TPB
+TRANS_SCHED_MAX = 5
+logo_trans_delay:		dc.w	3
+logo_trans_sched_nr:	dc.w	2*BL_RANGE, 0												; cnt and nr
+logo_trans_schedule:	dc.w	3, 19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0		; speed + pattern 20 words
+						dc.w	2, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
+						dc.w	3, 0,1,2,3,4,5,6,7,8,9,10,8,7,6,5,4,3,2,1,0
+						dc.w	2, 9,8,7,6,5,4,3,2,1,0,0,1,2,3,4,5,6,7,8,9
+						dc.w	3, 0,2,4,6,8,10,11,12,13,13,13,13,12,11,10,8,6,4,2,0
+logo_trans_speed:		dc.w	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+
+BLT_Q_MAX = 200
+blitter_queue:			dc.w	0						; offset in queue
+						dcb.l	BLT_Q_MAX,0
 
 end:
     ;echo 		"Total code length: ", (end-s)
@@ -729,6 +875,7 @@ LOGO_SIZE_Y = 64
 LOGO_COLS = 16
 LOGO_BPL = 4
 LOGO_SIZE = (LOGO_SIZE_X/8)*(LOGO_SIZE_Y)*(LOGO_BPL)
+LOGO_TRANS_NR = 17
 	EVEN
 logo_Eire:
    	INCBIN		"assets/eire_128x96.bpl"
@@ -766,11 +913,9 @@ mbc:
 	Copper_start_wait_addr:		rs.l	START_COPPER_LINES
 	BSS_CHIP_1:					rs.w	0
 
-LOGO_TRANS_NR = 17
-
 	RSRESET
 	Logo_screen1:				rs.b	LOGO_SIZE
-	Logo_trans_buffer:			rs.b	LOGO_SIZE*LOGO_TRANS_NR
+	Logo_trans_buffer:			rs.b	LOGO_SIZE*(LOGO_TRANS_NR-2)
 	BSS_CHIP_2:					rs.w	0
 
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_1

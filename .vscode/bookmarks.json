@@ -4,22 +4,27 @@
 			"path": "eire.s",
 			"bookmarks": [
 				{
-					"line": 289,
+					"line": 88,
 					"column": 3,
 					"label": ""
 				},
 				{
-					"line": 325,
-					"column": 2,
+					"line": 150,
+					"column": 10,
 					"label": ""
 				},
 				{
-					"line": 397,
+					"line": 368,
 					"column": 4,
 					"label": ""
 				},
 				{
-					"line": 650,
+					"line": 445,
+					"column": 2,
+					"label": ""
+				},
+				{
+					"line": 787,
 					"column": 9,
 					"label": ""
 				}
