@@ -6,9 +6,9 @@
 
 ; ----------- Constants
 
-;MUSIC_ON:		equ		1					; comment out for no music
+MUSIC_ON:		equ		1					; comment out for no music
 MUS_BPM:		equ		125					; music BPL
-MUS_TPB:		equ		(3000/MUS_BPM)		; ticks per beat (24)
+MUS_TPB:		equ		(3000/MUS_BPM)		; ticks per beat (24). 8 beats per pos (1 pos =~4 sec)
 MUS_TPN:		equ		(MUS_TPB/8)			; ticks per note (3)
 
 ; ----------- Includes
@@ -56,13 +56,19 @@ s:
 		move	#INTF_SETCLR|INTF_INTEN|INTF_VERTB|INTF_COPER,INTENA(a0)		; enable selected interrupts
 		move	#DMAF_SETCLR|DMAF_DMAEN|DMAF_BPLEN|DMAF_COPEN|DMAF_BLTEN,DMACON(a0)
 
-		;moveq	#11,d0
-		;bsr		setMusicPos
+		; moveq	#20,d0
+		; bsr		setMusicPos
 
 ;		bsr		swipeScreenAtStart
 ;		bsr		eirePart
 		bsr		scrollPart
+;		bsr		endPart
 
+		lea		sl(pc),a1							; if music finished then go straight to exit
+		tst		music_finished-sl(a1)
+		bne.s	exit
+
+		lea		CUSTOM,a0
 		move.l	mem_data_chip(pc),a1
 		lea		copper_blank_purple-mdc(a1),a2
 		move.l	a2,COP2LC(a0)
@@ -98,8 +104,7 @@ interruptL3:
 		lea		blitter_queue(pc),a1
 		move	(a1),d0
 		beq.s	.bExit						; is there a queue to process?
-		bsr		blitterQueueProcess			; process the next step in the queue
-		move	blitter_queue(pc),d0
+		bsr		blitterQueueProcess			; process the next step in the queue. Returns with Z set it end of queue
 		bne.s	.bExit
 		move	#INTF_BLIT,INTENA(a0)		; disable blitter L3 interrupt
 .bExit:
@@ -113,24 +118,42 @@ interruptL3:
 interruptL3Copper:
 		movem.l	d0-d2/a0-a6,-(sp)
 		ifd	MUSIC_ON
+		lea		sl(pc),a1
+		tst		music_lastpos-sl(a1)		; check when the last position is played, then stop the music and indicate it's finished
+		beq		.noCheckEnd
+		move.w	(LSP_State+m_currentSeq)(pc),d0
+		bne		.cont1
+		st		music_finished-sl(a1)
+        clr.l   d0
+		lea		CUSTOM,a0
+		move.l	d0,AUD0VOL(a0)			    ; all volume to 0 and dat to 0
+		move.l	d0,AUD1VOL(a0)
+		move.l	d0,AUD2VOL(a0)
+		move.l	d0,AUD3VOL(a0)
+		move.w	#$00ff,ADKCON(a0)		    ; clear audio 		
+		bra		.skipMus
+.noCheckEnd:
+		move.w	(LSP_State+m_currentSeq)(pc),music_lastpos-sl(a1)		; music pos
+.cont1:
 		lea		CUSTOM+AUD0LCH,a6		; always set a6 to dff0a0 before calling LSP tick
 		bsr		LSP_MusicPlayTick		; player music tick
+.skipMus:
 		endif
 
-		lea		sl(pc),a0
-		tst		beat_strobe-sl(a0)
+		lea		sl(pc),a1
+		tst		beat_strobe-sl(a1)
 		beq.s	.noStrobe
-		clr		beat_strobe-sl(a0)
+		clr		beat_strobe-sl(a1)
 		bra.s	.noBeat					; can skip beat checking right after strobe as that means it's the very next frame, so beat not possible
 .noStrobe
 		move	beat_next(pc),d0
-		cmp		tick_cnt-sl(a0),d0
+		cmp		tick_cnt-sl(a1),d0
 		bne.s	.noBeat
-		addq	#1,beat-sl(a0)				; count beats
-		addi	#MUS_TPB,beat_next-sl(a0)	; move to next beat
-		move	beat-sl(a0),beat_strobe-sl(a0)
+		addq	#1,beat-sl(a1)				; count beats
+		addi	#MUS_TPB,beat_next-sl(a1)	; move to next beat
+		move	beat-sl(a1),beat_strobe-sl(a1)
 .noBeat:
-		addq	#1,tick_cnt-sl(a0)			; increase tick (frame) counter
+		addq	#1,tick_cnt-sl(a1)			; increase tick (frame) counter
 
 
 		movem.l	(sp)+,d0-d2/a0-a6
@@ -141,12 +164,45 @@ interruptL3Copper:
 
 ;vertical blank interrupt
 interruptL3Vertb:
+		movem.l	a1/d0,-(sp)
+		move.l	intL3Proc(pc),d0
+		beq		.noPr
+		move.l	d0,a1
+		jsr		(a1)
+.noPr:	movem.l	(sp)+,a1/d0
 		move	#$20,CUSTOM+INTREQ
 		move	#$20,CUSTOM+INTREQ		; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
 		nop
 		rte
 
+; a1 - proc addr
+intL3ProcSet:
+		lea		intL3Proc(pc),a2
+		move.l	a1,(a2)
+		rts
+
+intL3ProcClear:
+		lea		intL3Proc(pc),a1
+		clr.l	(a1)
+		rts
+
+intL3Proc:		dc.l	0
+
 ;-----------------------------------------------------------------------
+; a0 - CUSTOM
+blitterQueueStart:
+		move	#INTF_SETCLR|INTF_BLIT,INTENA(a0)		; enable blitter L3 interrupt
+		lea		blitter_queue(pc),a1
+		move	(a1),d0
+		bne.s	.qNotEmpty
+		rts
+.qNotEmpty:
+		move	#-2,-2(a1,d0.w)							; end blitter queue
+		moveq	#2,d0
+		move	d0,(a1)
+		WAITBLIT
+;		bsr		blitterQueueProcess						; kick off blitter queue processing
+
 ; a0 - CUSTOM, a1 - blitter_queue, d0 - queue pointer
 blitterQueueProcess:
 		move.l	a1,a2
@@ -154,17 +210,15 @@ blitterQueueProcess:
 .bqLoop:
 		move	(a1)+,d0
 		bmi.s	.bqEnd
-		move	(a1)+,d1
-		move	d1,(a0,d0.w)
+		move	(a1)+,(a0,d0.w)
 		bra.s	.bqLoop
 .bqEnd:	cmpi	#-2,d0
 		beq.s	.bqStop
 		suba.l	a2,a1
-		move	a1,d0
-		move	d0,(a2)			; move on queue pos
+		move	a1,(a2)			; end this batch and move on queue pos
 		rts
 .bqStop:
-		move	#0,(a2)			; queue pos -1 means no processing required
+		move	#0,(a2)			; queue pos -2 means no processing required
 		rts
 
 ;-----------------------------------------------------------------------
@@ -194,6 +248,15 @@ setMusicPos:
 		move 	d1,beat_next-sl(a0)
 		bsr		LSP_MusicSetPos			; move actual mus
 		movem.l	(sp)+,d1-d2/a0
+		rts
+
+; d0 - delay after strobe
+syncToStrobe:
+		lea		beat_strobe(pc),a1
+.noStr:	tst		(a1)
+		beq.s	.noStr
+.delay:	VBLANKS
+		dbf		d0,.delay
 		rts
 
 ;-----------------------------------------------------------------------
@@ -304,15 +367,22 @@ scrollPart:
 		moveq	#(LOGO_SIZE_X/8),d1
 		bsr		setLogoAddr
 
+		bsr 	scrollInit
+
 		lea		copper_scroll,a2
 		move.l	a2,COP2LC(a0)
 		VBLANK
 
-		lea		copper_scroll_logo_cols,a1
+		lea		copper_scroll_logo_cols,a1					; show first logo
 		lea		base_purple_palette,a2
 		lea		logo_suspect_palette,a3
 		moveq	#2,d0
 		bsr		transformColors
+
+		moveq	#1,d0
+		bsr		syncToStrobe				; sync next action to strobe (music beat)
+		lea		scrollMove(pc),a1			; scroll move procedure to be called from the L3 int
+		bsr		intL3ProcSet
 
 ; Main scroll loop
 .mainLoop:
@@ -323,8 +393,19 @@ scrollPart:
 		bne.s	.noBlend
 		bsr		blendLogos
 .noBlend:
-		btst.b    #6,$bfe001
-        bne	     .mainLoop
+
+		lea		sl(pc),a1					; if music finished then finish part
+		tst		music_finished-sl(a1)
+		bne.s	.exit
+
+		btst.b  #6,CIAA
+        bne	    .mainLoop
+
+.exit:
+		bsr		intL3ProcClear				; remove L3 int proc
+		lea		blitter_queue(pc),a1		; make sure blitter queue is empty
+		BLITTERWAITQUEUE
+		WAITBLIT
 
 		lea		copper_scroll_logo_cols,a1
 		lea		logo_suspect_palette,a2
@@ -335,21 +416,119 @@ scrollPart:
 		rts
 
 ; ------------------------------------------
+scrollMove:
+		movem.l	a1/d0,-(sp)
+		lea		copper_scroll_shift,a1
+		subi	#1,scroll_cnt-copper_scroll_shift(a1)
+		bmi.s	.smExit				; stop scroll once all shown
+		subi	#$11,2(a1)			; shift scroll
+		bpl.b	.smJump
+		move	#$ff,2(a1)
+		add		#2,10(a1)			; move addr
+		bne.s	.sm1
+		add		#1,6(a1)
+.sm1:	add		#2,10+8(a1)
+		bne.s	.smJump
+		add		#1,6+8(a1)
+.smJump:
+		lea		scroll_sin(pc),a1
+		moveq	#0,d0
+		move.b	(a1),d0				; counter 23..0
+		subq	#1,d0
+		bpl.s	.sm2
+		move	#2*MUS_TPB-1,d0
+.sm2:	move.b	d0,(a1)+
+		move.b	(a1,d0.w),d0		; sin value
+		lea		copper_scroll_ypos,a1
+		.FOFS:	SET 0
+		REPT	5
+		move.b	d0,.FOFS(a1)
+		addq	#3,d0
+		.FOFS:	SET .FOFS+8
+		ENDR
+.smExit:
+		movem.l	(sp)+,a1/d0
+		rts
+
+scroll_sin:		dc.b	MUS_TPB*2,1,2,3,4,5,6,7,8,9,10,11,12,12,13,14,14,15,15,16,16,16,17,17,17,17,17,17,17,16,16,16,15,15,14,14,13,12,12,11,10,9,8,7,6,5,4,3,2
+		EVEN
+
+; ------------------------------------------
+; init scroll 8x12
+SCROLL_Y = 12
+scrollInit:
+		movem.l	ALL,-(sp)
+		move.l	mem_bss_chip(pc),a6
+		move.l	a6,d0
+		addi.l	#Scroll_buffer,d0
+		move.l	d0,a3
+		lea		copper_scroll_bpls,a2			; set scroll bpl addr
+		moveq	#1,d7
+.sadr:	move	d0,6(a2)
+		swap	d0
+		move	d0,2(a2)
+		swap	d0
+		lea		8(a2),a2
+		addi.l	#SCROLL_LEN,d0
+		dbf		d7,.sadr	
+
+		move.l	mem_bss_public(pc),a5
+		adda.l	#Font_16_aligned,a5
+		move.l	a5,a2
+		lea		font_8_12_4,a4
+		moveq	#0,d0
+		moveq	#SCROLL_CHARS-1,d7					; nr of fonts
+.fntPrep:											; align fonts with all words of each letter next to each other
+		.FOFS:	SET 0
+		REPT	SCROLL_Y
+		move.b	.FOFS(a4),(a5)+
+		move.b	.FOFS+SCROLL_CHARS(a4),(a5)+
+		.FOFS:	SET .FOFS+2*SCROLL_CHARS
+		ENDR
+		lea		32-2*SCROLL_Y(a5),a5				; skip not used lines up to 32
+		lea		1(a4),a4
+		dbf		d7,.fntPrep
+
+
+		; a1 - text, a2 - font, a3 - screen
+		lea		scroll_text,a1
+.siLoop:
+		moveq	#0,d0
+		move.b	(a1)+,d0
+		beq.s	.siEnd
+		subi	#32,d0				; space
+		lsl		#5,d0
+		lea		(a2,d0.w),a4
+		.FOFS:	SET 0
+		REPT	SCROLL_Y
+		move.b	(a4)+,.FOFS(a3)
+		move.b	(a4)+,.FOFS+SCROLL_LEN(a3)
+		.FOFS:	SET .FOFS+2*SCROLL_LEN
+		ENDR
+		lea		1(a3),a3
+		bra.s	.siLoop
+.siEnd:	
+		movem.l	(sp)+,ALL
+		rts
+
+; ------------------------------------------
 ; Blend logos step
 blendLogos:
-		lea		CUSTOM,a0 ; not needed?
+		lea		CUSTOM,a0
+		move.l	mem_bss_chip(pc),a6
 		lea		logo_trans_frames(pc),a5
-.blLoop1:
 		lea		logo_trans_sched_nr(pc),a1
 		move	2(a1),d0					; current schedule offset
 		subi	#1,(a1)						; schedule type timer 0-BL_RANGE
 		bne.s	.blNrc
 		move	#2*BL_RANGE,(a1)
 		lea		logo_trans_speed(pc),a2
-		moveq	#19,d7
+		moveq	#3,d7
 		moveq	#1,d6						; re-init the speed tab
 .blClSpd:
+		REPT 5
 		move	d6,(a2)+
+		ENDR
 		dbf		d7,.blClSpd
 		addi	#20*2+2,d0					; move to next schedule
 		cmp		#(20*2+2)*TRANS_SCHED_MAX,d0
@@ -360,10 +539,13 @@ blendLogos:
 		lea		logo_trans_schedule(pc),a3
 		lea		(a3,d0.w),a3				; move to the right schedule
 
+		lea		blitter_queue(pc),a1		; make sure blitter queue is empty
+		BLITTERWAITQUEUE
+
 		lea		logo_trans_delay(pc),a1
 		move	(a3)+,(a1)					; speed
 
-	move #$0f0,COLOR00(a0)
+;	move #$0f0,COLOR00(a0)
 		lea		logo_trans_speed(pc),a4
 		moveq	#0,d7						; X size in words *2
 .blIterate:
@@ -402,7 +584,7 @@ blendLogos:
 		lea		(a1,d3.w),a1					; start of free space in queue
 		tst		d0
  		bne.s	.blLimBlt
-		move.l	#BLTAMOD<<16+38,(a1)+
+		move.l	#BLTAMOD<<16+38,(a1)+			; this part has to be done only once
 		move.l	#BLTDMOD<<16+38,(a1)+
 		move.l	#BLTCON0<<16+$09f0,(a1)+
 		move.l	#BLTCON1<<16+0,(a1)+
@@ -423,8 +605,7 @@ blendLogos:
 		move	#((LOGO_SIZE_Y*LOGO_BPL)<<6)+1,(a1)+	; logo heigth + 1 word width
 		move	#-1,(a1)+						; end step
 		suba.l	a2,a1
-		move	a1,d3
-		move	d3,(a2)							; update queue length
+		move.w	a1,(a2)							; update queue length
 
 ; 		WAITBLIT
 ; 		tst		d0
@@ -443,16 +624,10 @@ blendLogos:
 		cmpi	#20*2,d7
 		bne		.blIterate
 
-		move	#INTF_SETCLR|INTF_BLIT,INTENA(a0)		; enable blitter L3 interrupt
-		lea		blitter_queue(pc),a1
-		move	(a1),d0
-		beq.s	.qEmpty
-		move	#-2,-2(a1,d0.w)							; end blitter queue
-		moveq	#2,d0
-		move	d0,(a1)
-		bsr		blitterQueueProcess						; kick off blitter queue processing
+		bsr		blitterQueueStart			; kick off blitter queue
+
 .qEmpty
-	move #$000,COLOR00(a0)
+;	move #$000,COLOR00(a0)
 		rts
 
 ; ------------------------------------------
@@ -762,6 +937,12 @@ scaleColorsDiff:
 		dbf		d6,.scale
 		rts
 
+;-----------------------------------------------------------------------
+;-----------------------------------------------------------------------
+endPart:
+
+		rts
+
 ; ----------- Include other code files
 
     INCLUDE     "os.s"
@@ -775,6 +956,8 @@ tick_cnt:				dc.w	0			; current tick
 beat:					dc.w	0			; current beat (absolute nr from 0=first at pos00 note 00, increases every MUS_TPB)
 beat_strobe				dc.w	0			; beat strobe, lit for 1 frame at the start of the beat with the nr of the beat
 beat_next:				dc.w	MUS_TPB		; next beat in ticks
+music_lastpos			dc.w	0			; last position
+music_finished:			dc.w	0			; first byte non-zero: music finished and stopped playing
 
 mem_data_chip:			dc.l	0			; addresses of allocated memory regions
 mem_data_public:		dc.l	0
@@ -792,7 +975,7 @@ logo_trans_schedule:	dc.w	3, 19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0		
 						dc.w	3, 0,1,2,3,4,5,6,7,8,9,10,8,7,6,5,4,3,2,1,0
 						dc.w	2, 9,8,7,6,5,4,3,2,1,0,0,1,2,3,4,5,6,7,8,9
 						dc.w	3, 0,2,4,6,8,10,11,12,13,13,13,13,12,11,10,8,6,4,2,0
-logo_trans_speed:		dc.w	1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+logo_trans_speed:		dc.w	1,1,1,1,1, 1,1,1,1,1, 1,1,1,1,1, 1,1,1,1,1
 
 BLT_Q_MAX = 200
 blitter_queue:			dc.w	0						; offset in queue
@@ -841,9 +1024,11 @@ copper_eire_logo_bpls:
 
 ; ----------- Scroll screen coppers
 BC_PURPLE = $313
+scroll_cnt:		dc.w	(SCROLL_LEN-44)*8
 copper_scroll:
 		dc.w	BPLCON0, $0200  										 ; 0 bitplanes
-		dc.w	DIWSTRT, $2C81, DIWSTOP, $2CC1
+		dc.w	BPLCON1, $0000  										 ; no scroll
+		dc.w	DIWSTRT, $2C81, DIWSTOP, $1EC1
 		dc.w	DDFSTRT, $0038, DDFSTOP, $00D0
 copper_scroll_logo_cols:
 		dc.w	COLOR00,BC_PURPLE,COLOR01,BC_PURPLE,COLOR02,BC_PURPLE,COLOR03,BC_PURPLE,COLOR04,BC_PURPLE,COLOR05,BC_PURPLE,COLOR06,BC_PURPLE,COLOR07,BC_PURPLE
@@ -857,6 +1042,23 @@ copper_scroll_logo_bpls:
 ;		dc.w	$338f,$fffe, COLOR00, BC_PURPLE, COLOR00, $424, COLOR00, $535, COLOR00, $424, COLOR00, BC_PURPLE
 ;		dc.w	$348f,$fffe, COLOR00, BC_PURPLE, COLOR00, BC_PURPLE, COLOR00, $424, COLOR00, BC_PURPLE
 		dc.w	$7001,$fffe, BPLCON0, $0200
+		dc.w	$ffdf,$fffe
+
+		dc.w	$0001,$fffe
+		dc.w	BPL1MOD,2*SCROLL_LEN-40
+		dc.w	BPL2MOD,2*SCROLL_LEN-40
+		dc.w	DIWSTRT, $2C91, DIWSTOP, $1EB1
+		dc.w	COLOR01,$0b9b,COLOR02,$0444,COLOR03,$0cac
+copper_scroll_shift:
+		dc.w	BPLCON1, $0000
+copper_scroll_bpls:
+		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0
+copper_scroll_ypos:
+		dc.w	$1101,$fffe, BPLCON0, $2200
+		dc.w	$1401,$fffe, COLOR03,$0dbd
+		dc.w	$1701,$fffe, COLOR03,$0ece
+		dc.w	$1A01,$fffe, COLOR03,$0fdf
+		dc.w	$1d01,$fffe, BPLCON0, $0200
 		dc.l	-2
 
 	EVEN
@@ -878,7 +1080,7 @@ LOGO_SIZE = (LOGO_SIZE_X/8)*(LOGO_SIZE_Y)*(LOGO_BPL)
 LOGO_TRANS_NR = 17
 	EVEN
 logo_Eire:
-   	INCBIN		"assets/eire_128x96.bpl"
+   	INCBIN		"assets/eire_128x96x16.bpl"
 EIRE_SIZE_X = 128
 EIRE_SIZE_Y = 96
 EIRE_COLS = 16
@@ -901,9 +1103,18 @@ base_purple_palette:
 	dcb.w		16,BC_PURPLE
 logo_eire_palette:
 	dc.w		EIRE_COLS
-   	INCBIN		"assets/eire_128x96.pal"
-font_8:
-   	INCBIN		"assets/font.bpl"
+   	INCBIN		"assets/eire_128x96x16.pal"
+font_16_15_1:
+   	INCBIN		"assets/font_16x15x1.bpl"
+font_8_12_4:
+   	INCBIN		"assets/font_8x12x4.bpl"
+scroll_text:
+   	INCBIN		"assets/scroll.txt"
+	dc.b		0
+	EVEN
+scroll_text_end:
+S
+	EVEN
 
 ; ------------------------- BSS CHIP section ---------------------------------
 	bss_c
@@ -913,15 +1124,21 @@ mbc:
 	Copper_start_wait_addr:		rs.l	START_COPPER_LINES
 	BSS_CHIP_1:					rs.w	0
 
+SCROLL_LEN = (scroll_text_end-scroll_text)
+SCROLL_CHARS = 60
+
 	RSRESET
 	Logo_screen1:				rs.b	LOGO_SIZE
 	Logo_trans_buffer:			rs.b	LOGO_SIZE*(LOGO_TRANS_NR-2)
+	Scroll_buffer:				rs.b	SCROLL_LEN*2*SCROLL_Y
 	BSS_CHIP_2:					rs.w	0
 
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_1
 	if BSS_CHIP_2 > BSS_CHIP_ALLOC_MAX
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_2
 	endif
+
+	 echo 		"scrb: ", SCROLL_LEN*2*SCROLL_Y
 
 	; echo 		"BSS 1: ", BSS_CHIP_1
 	; echo 		"BSS 2: ", BSS_CHIP_2
@@ -935,8 +1152,8 @@ mbp:
 	Logo_scale_tab:				rs.b	256
 	Logo_chunky_Suspect:		rs.b	LOGO_SIZE_X*LOGO_SIZE_Y
 	Logo_chunky_Scoopex:		rs.b	LOGO_SIZE_X*LOGO_SIZE_Y				; do no change the order of this and previous row
-;	Logo_chunky_diff:			rs.b	LOGO_SIZE_X*LOGO_SIZE_Y
 	Logo_chunky_buffer:			rs.b	LOGO_SIZE_X*LOGO_SIZE_Y
+	Font_16_aligned:			rs.b	32*SCROLL_CHARS
 	BSS_PUBLIC_ALLOC_MAX:		rs.w	0
 
 	ds.b		BSS_PUBLIC_ALLOC_MAX

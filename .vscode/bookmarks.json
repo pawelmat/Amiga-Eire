@@ -4,28 +4,33 @@
 			"path": "eire.s",
 			"bookmarks": [
 				{
-					"line": 88,
-					"column": 3,
+					"line": 165,
+					"column": 5,
 					"label": ""
 				},
 				{
-					"line": 150,
-					"column": 10,
+					"line": 387,
+					"column": 5,
 					"label": ""
 				},
 				{
-					"line": 368,
+					"line": 418,
+					"column": 5,
+					"label": ""
+				},
+				{
+					"line": 458,
 					"column": 4,
 					"label": ""
 				},
 				{
-					"line": 445,
-					"column": 2,
+					"line": 941,
+					"column": 0,
 					"label": ""
 				},
 				{
-					"line": 787,
-					"column": 9,
+					"line": 1036,
+					"column": 2,
 					"label": ""
 				}
 			]

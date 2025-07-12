@@ -130,4 +130,12 @@ WAITBLITS:      MACRO
                 bne.b     .1\@
                 ENDM
 
+; a0 - CUSTOM, a1 - blitter_queue
+BLITTERWAITQUEUE:	MACRO
+;.1\@:   btst    #14,DMACONR(a0)
+;        bne.b   .1\@
+.2\@:	tst		(a1)
+        bne.b   .2\@
+        ENDM
+
                 ENDC
