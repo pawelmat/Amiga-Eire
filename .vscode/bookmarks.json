@@ -4,33 +4,43 @@
 			"path": "eire.s",
 			"bookmarks": [
 				{
-					"line": 165,
-					"column": 5,
-					"label": ""
-				},
-				{
-					"line": 387,
-					"column": 5,
-					"label": ""
-				},
-				{
-					"line": 418,
-					"column": 5,
-					"label": ""
-				},
-				{
-					"line": 458,
-					"column": 4,
-					"label": ""
-				},
-				{
-					"line": 941,
+					"line": 60,
 					"column": 0,
 					"label": ""
 				},
 				{
-					"line": 1036,
-					"column": 2,
+					"line": 164,
+					"column": 5,
+					"label": ""
+				},
+				{
+					"line": 421,
+					"column": 4,
+					"label": ""
+				},
+				{
+					"line": 507,
+					"column": 10,
+					"label": ""
+				},
+				{
+					"line": 624,
+					"column": 3,
+					"label": ""
+				},
+				{
+					"line": 754,
+					"column": 3,
+					"label": ""
+				},
+				{
+					"line": 827,
+					"column": 8,
+					"label": ""
+				},
+				{
+					"line": 1596,
+					"column": 5,
 					"label": ""
 				}
 			]

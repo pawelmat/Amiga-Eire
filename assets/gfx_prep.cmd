@@ -3,4 +3,4 @@
 ..\tools\Iff2bpl sct_73_inv.iff
 ..\tools\Iff2bpl scx_65_inv.iff
 ..\tools\Iff2bpl eire_128x96x16.iff
-
+..\tools\Iff2bpl shrinkingdots_8.iff

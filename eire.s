@@ -58,31 +58,30 @@ s:
 
 		; moveq	#20,d0
 		; bsr		setMusicPos
-
+parts:
 ;		bsr		swipeScreenAtStart
 ;		bsr		eirePart
+		bsr		lsystemPart
 		bsr		scrollPart
-;		bsr		endPart
+		bsr		endPart
 
-		lea		sl(pc),a1							; if music finished then go straight to exit
-		tst		music_finished-sl(a1)
-		bne.s	exit
+; 		lea		sl(pc),a1							; if music finished then go straight to exit
+; 		tst		music_finished-sl(a1)
+; 		bne.s	exit
 
-		lea		CUSTOM,a0
-		move.l	mem_data_chip(pc),a1
-		lea		copper_blank_purple-mdc(a1),a2
-		move.l	a2,COP2LC(a0)
-		lea		sl(pc),a2
-infiniLoop:
-		VBLANKNL 30
-		tst		beat_strobe-sl(a2)
-		beq		.noStrobe
-		move	#$e5e,COLOR00(a0)
-.noStrobe:
-		btst.b    #6,CIAA
-        bne.s     infiniLoop
-
-        ;TESTLMB
+; 		lea		CUSTOM,a0
+; 		move.l	mem_data_chip(pc),a1
+; 		lea		copper_blank_purple-mdc(a1),a2
+; 		move.l	a2,COP2LC(a0)
+; 		lea		sl(pc),a2
+; infiniLoop:
+; 		VBLANKNL 30
+; 		tst		beat_strobe-sl(a2)
+; 		beq		.noStrobe
+; 		move	#$e5e,COLOR00(a0)
+; .noStrobe:
+; 		btst.b    #6,CIAA
+;         bne.s     infiniLoop
 
 exit:
         bsr     OsRestore
@@ -259,6 +258,10 @@ syncToStrobe:
 		dbf		d0,.delay
 		rts
 
+vBlank:
+		VBLANK
+		rts
+
 ;-----------------------------------------------------------------------
 ;-----------------------------------------------------------------------
 ; 2-stage screen transition (left right and then centre->up/down) at the start
@@ -336,7 +339,7 @@ eirePart:
 		VBLANK
 
 		lea		copper_eire_logo_cols,a1
-		lea		logo_eire_palette,a2
+		lea		logo_eire_palette(pc),a2
 		moveq	#2,d0
 		bsr		fadeColorsIn
 
@@ -346,11 +349,448 @@ eirePart:
 
 		rts
 
+;-----------------------------------------------------------------------
+;-----------------------------------------------------------------------
+LSYS_X = 32
+LSYS_Y = 256
+LSYS_DISPLACEMENT = 3
+LSYS_BOBSTRIP = 32
+LSYS_RECTAB_MAX_LEN = 400
+LSYS_BOBS_MAX_LEN = 600		; 250 bobs
+lsystemPart:
+		lea		CUSTOM,a0
+		lea		copper_blank_purple,a1
+		move.l	a1,COP2LC(a0)
+		bsr		vBlank
+
+		move.l	mem_bss_chip(pc),a6
+		move.l	a6,d0
+		addi.l	#LS_Screen1,d0
+		lea		lsysScreens(pc),a3
+		move.l	d0,(a3)							; buffer screen
+		lea		copper_lsys_bpls,a2				; d0 - addr, a2 bpl pointers
+		bsr		lsysSetBplAddr
+
+		move.l	a6,d0
+		addi.l	#LS_Screen2,d0
+		move.l	d0,4(a3)						; active screen (later)
+
+		move.l	d0,a1							; clear screens
+		move	#LSYS_Y<<6+LSYS_X/2,d0			; a1 addr, d0 size
+		bsr		lsysClearScr
+		move.l	(a3),a1
+		move	#LSYS_Y<<6+LSYS_X/2,d0			; a1 addr, d0 size
+		bsr		lsysClearScr
+
+		lea		copper_lsys,a2
+		move.l	a2,COP2LC(a0)
+		bsr		vBlank
+
+		move.l	#-1,BLTAFWM(a0)					; blitter config part that does not change
+		move	#LSYS_BOBSTRIP-4,BLTAMOD(a0)
+		move	#LSYS_X-4,BLTBMOD(a0)
+		move	#LSYS_X-4,BLTDMOD(a0)
+		move	#0,BLTCON1(a0)
+
+		lea		lsys_p1(pc),a1
+		move.l	mem_bss_public(pc),a5
+		adda.l	#LS_recursion_tab1,a3
+		bsr		lsysCreateIterations
+
+		lea		lsys_p2(pc),a1
+		move.l	mem_bss_public(pc),a3
+		adda.l	#LS_recursion_tab2,a3
+		bsr		lsysCreateIterations
+
+		move.l	mem_bss_public(pc),a1
+		adda.l	#LS_bobs_tab1,a1
+		lea		lsys_p1(pc),a3
+		bsr		lsysCalcBobs
+
+		move.l	mem_bss_public(pc),a1
+		adda.l	#LS_bobs_tab2,a1
+		lea		lsys_p2(pc),a3
+		bsr		lsysCalcBobs
+
+
+		move.l	mem_bss_public(pc),a1
+		adda.l	#LS_bobs_tab2,a1
+		lea		lsysBobTabPtr(pc),a3
+		move.l	a1,(a3)							; start from the beginning of the bobs table
+
+
+.mainLoopLSystem:
+		bsr		vBlank
+
+	move #$f00,COLOR00(a0)
+
+		bsr		lsysSwitchScreens
+
+		moveq	#1,d7							; speed - how many bobs to draw at once
+;		bsr		lsysDrawBobs
+
+		move.l	lsysScreens(pc),a1
+		move	#LSYS_Y<<6+LSYS_X/2,d0
+		bsr		lsysClearScr
+
+		bsr		lsysRotateBobs
+
+	move #$000,COLOR00(a0)
+
+		btst.b  #6,CIAA
+        bne	    .mainLoopLSystem
+
+		rts
+
+; a1 - adr, d0 - H<<6+W/2
+lsysClearScr:
+		WAITBLIT
+		move.l	#-1,BLTAFWM(a0)
+		move	#0,BLTDMOD(a0)
+		move.l	#$1000000,BLTCON0(a0)
+		move.l	a1,BLTDPT(a0)
+		move	d0,BLTSIZE(a0)
+		rts
+
+; d0 - addr, a2 bpl pointers
+lsysSetBplAddr:
+		move.l	d0,-(sp)
+		moveq	#1,d7
+.sadr:	
+		move	d0,6(a2)
+		move	d0,6+16(a2)
+		swap	d0
+		move	d0,2(a2)
+		move	d0,2+16(a2)
+		swap	d0
+		lea		8(a2),a2
+		addi.l	#(LSYS_DISPLACEMENT-1)*LSYS_X,d0
+		dbf		d7,.sadr	
+		move.l	(sp)+,d0
+		rts
+
+lsysSwitchScreens:
+		lea		lsysScreens(pc),a3
+		move.l	(a3),d0
+		move.l	4(a3),d1
+		move.l	d1,(a3)
+		move.l	d0,4(a3)						; drawn screen becomes visible
+		lea		copper_lsys_bpls,a2				; d0 - addr, a2 bpl pointers
+		bsr		lsysSetBplAddr
+		rts
+
+;------------------------------
+; a0 - custom, a1 - scr, a2 - bob, d0 - X, d1 - Y
+; lsysPrintBob:
+; 		movem.l	d0-d2/a3,-(sp)
+; 		ror		#4,d0
+; 		move	d0,d2
+; 		andi	#$f000,d2
+; 		ori		#$0dfc,d2
+; 		andi	#$0fff,d0
+; 		add		d0,d0
+; 		lsl		#5,d1					; screen width is 32 bytes
+; 		add		d0,d1
+; 		lea		(a1,d1.w),a3
+
+; 		WAITBLIT
+; 		move.l	a2,BLTAPT(a0)
+; 		move	d2,BLTCON0(a0)
+; 		move.l	a3,BLTBPT(a0)
+; 		move.l	a3,BLTDPT(a0)
+; 		move	#16<<6+2,BLTSIZE(a0)
+; 		movem.l	(sp)+,d0-d2/a3
+; 		rts
+
+
+;------------------------------
+; a0 - custom, lsysBobTabPtr has to be initialised with a pointer to the bob table.
+lsysRotateBobs:
+;		move.l	mem_bss_chip(pc),a1
+;		adda.l	#Logo_screen1,a1
+		move.l	lsysScreens(pc),a1					; buffer screen
+		move.l	lsysBobTabPtr(pc),a4
+		lea		bobs,a6
+		lea		lsysBobAngle(pc),a5
+		move	2(a5),d7
+		add		d7,(a5)								; progress rotation
+		move	(a5),d7
+		andi	#511,d7
+		lea		sinus_14b_256+32*2(pc),a5
+.drawLoop:
+		move	(a4)+,d0
+		bmi		.finished
+		move	(a4)+,d1
+		move	(a4)+,d2
+		lea		(a6,d2.w),a2
+
+		subi	#120,d0					; centre
+		subi	#120,d1
+		asl		#2,d0
+		asl		#2,d1
+		move	d0,d2
+		move	d1,d3
+
+		muls	32*2(a5,d7.w),d0		; x' = x*cos - y*sin
+		swap	d0
+		muls	-32*2(a5,d7.w),d1
+		swap	d1
+		sub		d1,d0					; x'
+
+		muls	-32*2(a5,d7.w),d2		; y' = x*sin + y*cos
+		swap	d2
+		muls	32*2(a5,d7.w),d3
+		swap	d3
+		add		d2,d3
+		move	d3,d1					; y'
+
+		addi	#120,d0
+		addi	#120,d1
+
+		ror		#4,d0
+		move	d0,d2
+		andi	#$f000,d2
+		ori		#$0dfc,d2
+		andi	#$0fff,d0
+		add		d0,d0
+		lsl		#5,d1					; screen width is 32 bytes
+		add		d0,d1
+		lea		(a1,d1.w),a3
+
+		WAITBLIT
+		move	#LSYS_X-4,BLTDMOD(a0)
+		move.l	a2,BLTAPT(a0)
+		move	d2,BLTCON0(a0)
+		move.l	a3,BLTBPT(a0)
+		move.l	a3,BLTDPT(a0)
+		move	#16<<6+2,BLTSIZE(a0)
+
+		bra		.drawLoop
+.finished:
+		rts
+
+;------------------------------
+; a0 - custom, d7 - nr to draw. lsysBobTabPtr has to be initialised with a pointer to the bob table.
+lsysDrawBobs:
+		; move.l	mem_bss_chip(pc),a1
+		; adda.l	#Logo_screen1,a1
+		move.l	lsysScreens(pc),a1					; buffer screen
+		move.l	lsysBobTabPtr(pc),a4
+		lea		bobs,a6
+	; move.l	a4,a5
+.drawLoop:
+		move	(a4)+,d0
+		bmi.s	.finished
+		move	(a4)+,d1
+		move	(a4)+,d2
+		lea		(a6,d2.w),a2
+;		bsr 	lsysPrintBob
+
+		ror		#4,d0
+		move	d0,d2
+		andi	#$f000,d2
+		ori		#$0dfc,d2
+		andi	#$0fff,d0
+		add		d0,d0
+		lsl		#5,d1					; screen width is 32 bytes
+		add		d0,d1
+		lea		(a1,d1.w),a3
+
+		WAITBLIT
+		move.l	a2,BLTAPT(a0)
+		move	d2,BLTCON0(a0)
+		move.l	a3,BLTBPT(a0)
+		move.l	a3,BLTDPT(a0)
+		move	#16<<6+2,BLTSIZE(a0)
+
+		dbf		d7,.drawLoop
+
+		lea		lsysBobTabPtr(pc),a3	; save pointer to where processing finished
+		move.l	a4,(a3)
+		bra		.exit
+.finished:
+		suba	#2,a4					; go back to the end marker
+		lea		lsysBobTabPtr(pc),a3	; save pointer
+		move.l	a4,(a3)
+.exit:
+
+	; suba.l	a5,a4
+	; move	a4,l_bob_nr
+		rts
+
+; l_bob_nr:	dc.w	0
+
+;------------------------------
+; a3 - L system params, a1 - bobs tab
+lsysCalcBobs:
+		movem.l	ALL,-(sp)
+		move	LSYS_OFS_X(a3),d0
+		move	LSYS_OFS_Y(a3),d1
+		move	LSYS_OFS_Ang(a3),d2
+		move	LSYS_OFS_Bob(a3),d3
+
+		asl		#2,d2
+		move	d0,(a1)+
+		move	d1,(a1)+
+		move	d3,(a1)+
+
+		move.l	LSYS_OFS_RFN(a3),a4					; iteration sequence to print
+		lea		l_rotation_tab(pc),a5
+
+.lParseLoop:
+		moveq	#0,d6
+		move.b	(a4)+,d6
+		beq		.lStopParse
+		bmi.s	.lNeg
+		cmpi.b	#10,d6
+		ble		.lJustDraw
+		sub		#30,d6								; rotate
+		asl		#2,d6
+		add		d6,d2
+		bmi		.lrot1
+		cmpi	#24*4,d2
+		ble		.lParseLoop
+		sub		#24*4,d2
+		bra		.lParseLoop
+.lrot1:	add		#24*4,d2
+		bra		.lParseLoop
+.lJustDraw:
+		add		(a5,d2),d0							; change x and y by whatever the current rotation is
+		add		2(a5,d2),d1							; change x and y by whatever the current rotation is
+		move	d0,(a1)+
+		move	d1,(a1)+
+		move	d3,(a1)+
+		bra		.lParseLoop
+.lNeg:	cmpi.b	#-1,d6
+		bne.s	.lPull
+		addq	#4,d3								; decrease bob size
+		cmpi	#7*4,d3
+		ble		.l1
+		move	#7*4,d3
+;		andi	#31,d3
+.l1:	movem	d0-d3,-(sp)							; -1 push
+		bra		.lParseLoop
+.lPull:
+		movem	(sp)+,d0-d3							; -2 pull
+		bra		.lParseLoop
+.lStopParse:
+		move	#-1,(a1)+							; end of bob table
+		movem.l	(sp)+,ALL
+		rts
+
+;------------------------------
+; a1 - L system params, a3 - recursion tab
+lsysCreateIterations:
+		movem.l	ALL,-(sp)
+		move	LSYS_OFS_RNr(a1),d7
+		subq	#1,d7
+
+		move.l	a3,a6				; a6 - last recursion
+		move	LSYS_OFS_Ax(a1),d0
+		lea		(a1,d0.w),a2
+.ci1:	move.b	(a2)+,(a3)+			; axiom data - recursion 0
+		bne.s	.ci1
+
+		move.l	a6,a2				; a2 last recursion
+		move.l	a3,a6
+		; a2 last recursion, a3 new recursion
+		moveq	#0,d0
+.ciIter:
+		move.b	(a2)+,d0
+		beq		.ciEndIter
+		bpl		.ciNoNeg
+		move.b	d0,(a3)+			; negatives - just copy
+		bra		.ciIter
+.ciNoNeg:
+		cmpi.b	#10,d0
+		ble		.ciIsRule
+		move.b	d0,(a3)+			; >10 are angle changes centered on 30
+		bra		.ciIter
+.ciIsRule:
+		move.b	LSYS_OFS_Rules(a1,d0.w),d0
+		lea		(a1,d0.w),a4		; rule addr
+.ci2:	move.b	(a4)+,d0
+		beq		.ciIter
+		move.b	d0,(a3)+
+		bra		.ci2				; copy rule
+.ciEndIter:
+		move.b	d0,(a3)+
+		move.l	a6,a2
+		move.l	a3,a6
+		dbf		d7,.ciIter
+
+	; move.l	mem_bss_public(pc),a6
+	; adda.l	#LS_recursion_tab,a6
+	; suba	a6,a3
+	; move	a3,lsys_Len
+
+		move.l	a2,LSYS_OFS_RFN(a1)		; final recursion table addr
+		movem.l	(sp)+,ALL
+		rts
+
+; lsys_Len:	dc.w	0
+
+		RSRESET
+		LSYS_OFS_X:		rs.w	1
+		LSYS_OFS_Y:		rs.w	1
+		LSYS_OFS_Ang:	rs.w	1
+		LSYS_OFS_Bob:	rs.w	1
+		LSYS_OFS_RNr:	rs.w	1
+		LSYS_OFS_RFN:	rs.l	1
+		LSYS_OFS_Ax:	rs.w	1
+		LSYS_OFS_Rules:	rs.w	1
+
+
+; lsys_p1:
+; .l_p1:		dc.w	25,200,18,5		; x, y, angle offset (0-23), starting bob index(0-7)
+; 			dc.w	3				; recursions
+; 			dc.l	0				; final recursion adress
+; 			dc.w	.l_a1-.l_p1
+; 			dc.b	0,.l_r1_1-.l_p1,.l_r1_2-.l_p1,.l_r1_3-.l_p1
+; .l_a1:		dc.b	1,0				; axiom
+; .l_r1_1:	dc.b	3,2,26,3,1,26,3,2,0
+; .l_r1_2:	dc.b	3,1,34,3,2,34,3,1,0
+; .l_r1_3:	dc.b	3,0
+
+lsys_p1:
+.l_p1:		dc.w	120,120,2,0		; x, y, angle offset (0-23), starting bob index
+			dc.w	3				; recursions
+			dc.l	0				; final recursion adress
+			dc.w	.l_a1-.l_p1
+			dc.b	0,.l_r1_1-.l_p1,.l_r1_2-.l_p1,0
+.l_a1:		dc.b	-1,42,1,-2,1,0				; axiom
+.l_r1_1:	dc.b	2,29,2,29,2,27,-1,38,1,-2,2,-1,31,1,-2,26,2,0
+.l_r1_2:	dc.b	2,0
+
+
+
+lsys_p2:
+.l_p1:		dc.w	120,120,0,0		; x, y, angle offset (0-23), starting bob index
+			dc.w	3				; recursions
+			dc.l	0				; final recursion adress
+			dc.w	.l_a1-.l_p1
+			dc.b	0,.l_r1_1-.l_p1,.l_r1_2-.l_p1,0
+;.l_a1:		dc.b	1,0				; axiom
+.l_a1:		dc.b	-1,38,1,-2,-1,46,1,-2,1,0				; axiom
+.l_r1_1:	dc.b	2,31,2,31,2,-1,33,1,-2,28,1,0
+.l_r1_2:	dc.b	2,0
+
+
+lsysBobTabPtr:	dc.l	0
+lsysScreens:	dc.l	0,0			; buffer screen, acive screen
+lsysBobAngle:	dc.w	0, -2			; angle, speed
+
+		EVEN
+l_rotation_tab:		dc.w	0,10,-3,9,-5,8,-8,7,-9,5,-10,2, -10,0,-10,-3,-9,-5,-8,-8,-5,-9,-3,-10, 0,-10,3,-10,5,-8,8,-8,9,-5,10,-3, 10,0,9,3,8,5,7,8,5,8,3,9	; 24 - evey 15 degs
+		EVEN
 
 ;-----------------------------------------------------------------------
 ;-----------------------------------------------------------------------
 scrollPart:
 		lea		CUSTOM,a0
+		lea		copper_blank_purple,a1
+		move.l	a1,COP2LC(a0)
+		bsr		vBlank
 		bsr		logoTransformPrecalc						; prepare logo anims
 
 		move.l	mem_bss_chip(pc),a6
@@ -371,11 +811,11 @@ scrollPart:
 
 		lea		copper_scroll,a2
 		move.l	a2,COP2LC(a0)
-		VBLANK
+		bsr		vBlank
 
 		lea		copper_scroll_logo_cols,a1					; show first logo
-		lea		base_purple_palette,a2
-		lea		logo_suspect_palette,a3
+		lea		base_purple_palette_16(pc),a2
+		lea		logo_suspect_palette(pc),a3
 		moveq	#2,d0
 		bsr		transformColors
 
@@ -385,7 +825,7 @@ scrollPart:
 		bsr		intL3ProcSet
 
 ; Main scroll loop
-.mainLoop:
+.mainLoopScroll:
 		VBLANK
 
 		lea		logo_trans_delay(pc),a1
@@ -399,7 +839,7 @@ scrollPart:
 		bne.s	.exit
 
 		btst.b  #6,CIAA
-        bne	    .mainLoop
+        bne	    .mainLoopScroll
 
 .exit:
 		bsr		intL3ProcClear				; remove L3 int proc
@@ -408,8 +848,8 @@ scrollPart:
 		WAITBLIT
 
 		lea		copper_scroll_logo_cols,a1
-		lea		logo_suspect_palette,a2
-		lea		base_purple_palette,a3
+		lea		logo_suspect_palette(pc),a2
+		lea		base_purple_palette_16(pc),a3
 		moveq	#2,d0
 		bsr		transformColors
 
@@ -417,7 +857,7 @@ scrollPart:
 
 ; ------------------------------------------
 scrollMove:
-		movem.l	a1/d0,-(sp)
+;		movem.l	a1/d0,-(sp)
 		lea		copper_scroll_shift,a1
 		subi	#1,scroll_cnt-copper_scroll_shift(a1)
 		bmi.s	.smExit				; stop scroll once all shown
@@ -431,7 +871,7 @@ scrollMove:
 		bne.s	.smJump
 		add		#1,6+8(a1)
 .smJump:
-		lea		scroll_sin(pc),a1
+		lea		.scroll_sin(pc),a1
 		moveq	#0,d0
 		move.b	(a1),d0				; counter 23..0
 		subq	#1,d0
@@ -447,10 +887,10 @@ scrollMove:
 		.FOFS:	SET .FOFS+8
 		ENDR
 .smExit:
-		movem.l	(sp)+,a1/d0
+;		movem.l	(sp)+,a1/d0
 		rts
 
-scroll_sin:		dc.b	MUS_TPB*2,1,2,3,4,5,6,7,8,9,10,11,12,12,13,14,14,15,15,16,16,16,17,17,17,17,17,17,17,16,16,16,15,15,14,14,13,12,12,11,10,9,8,7,6,5,4,3,2
+.scroll_sin:		dc.b	MUS_TPB*2,1,2,3,4,5,6,7,8,9,10,11,12,12,13,14,14,15,15,16,16,16,17,17,17,17,17,17,17,16,16,16,15,15,14,14,13,12,12,11,10,9,8,7,6,5,4,3,2
 		EVEN
 
 ; ------------------------------------------
@@ -472,6 +912,17 @@ scrollInit:
 		addi.l	#SCROLL_LEN,d0
 		dbf		d7,.sadr	
 
+		bsr		fontPrep_8_12					; out: a2 - font addr
+
+		lea		scroll_text,a1					; print the whole scroll at once
+		move	#SCROLL_LEN,d1
+		bsr		printText_8_12
+
+		movem.l	(sp)+,ALL
+		rts
+
+; In: - , Out: a2 font addr
+fontPrep_8_12:
 		move.l	mem_bss_public(pc),a5
 		adda.l	#Font_16_aligned,a5
 		move.l	a5,a2
@@ -488,10 +939,12 @@ scrollInit:
 		lea		32-2*SCROLL_Y(a5),a5				; skip not used lines up to 32
 		lea		1(a4),a4
 		dbf		d7,.fntPrep
+		rts
 
-
-		; a1 - text, a2 - font, a3 - screen
-		lea		scroll_text,a1
+; a1 - text, a2 - font, a3 - screen, d1 - line length
+printText_8_12:
+		move	d1,d5
+		lsl		d5
 .siLoop:
 		moveq	#0,d0
 		move.b	(a1)+,d0
@@ -499,17 +952,17 @@ scrollInit:
 		subi	#32,d0				; space
 		lsl		#5,d0
 		lea		(a2,d0.w),a4
-		.FOFS:	SET 0
-		REPT	SCROLL_Y
-		move.b	(a4)+,.FOFS(a3)
-		move.b	(a4)+,.FOFS+SCROLL_LEN(a3)
-		.FOFS:	SET .FOFS+2*SCROLL_LEN
-		ENDR
+		moveq	#0,d2
+		move	d1,d3
+		moveq	#SCROLL_Y-1,d4
+.fnt:	move.b	(a4)+,(a3,d2.w)
+		move.b	(a4)+,(a3,d3.w)
+		add		d5,d2
+		add		d5,d3
+		dbf		d4,.fnt
 		lea		1(a3),a3
 		bra.s	.siLoop
-.siEnd:	
-		movem.l	(sp)+,ALL
-		rts
+.siEnd:	rts
 
 ; ------------------------------------------
 ; Blend logos step
@@ -651,7 +1104,7 @@ logoTransformPrecalc:
 		lea		4(a5),a5							; start from frame 2
 		lea		Logo_scale_tab(a6),a4
 		move.l	mem_bss_chip(pc),a6
-		lea		Logo_trans_buffer(a6),a6			; bitplanes destination
+		adda.l	#Logo_trans_buffer,a6				; bitplanes destination
 		moveq	#1,d7								; scaling factor
 .frameLoop:
 	; move #$f00,CUSTOM+COLOR00
@@ -787,7 +1240,7 @@ fadeColorsIn:
 .loop:	movem.l	(sp),a1/a2
 		bsr.s	scaleColors
 		move	d3,d7
-.wait:	VBLANK
+.wait:	bsr		vBlank
 		dbf		d7,.wait
 		addq	#1,d0		; increase scaling factor
 		cmpi	#17,d0
@@ -811,7 +1264,7 @@ fadeColorsOut:
 .loop:	movem.l	(sp),a1/a2
 		bsr.s	scaleColors
 		move	d3,d7
-.wait:	VBLANK
+.wait:	bsr		vBlank
 		dbf		d7,.wait
 		dbf		d0,.loop	; decrease scaling factor, last run will be with 0
 		movem.l	(sp)+,a1/a2
@@ -876,8 +1329,7 @@ transformColors:
 		moveq	#0,d0		; scaling factor
 .loop:	movem.l	(sp),a1/a2/a3/d7
 		bsr.s	scaleColorsDiff
-;		move	d3,d7
-.wait:	VBLANK
+.wait:	bsr		vBlank
 		dbf		d7,.wait
 		addq	#1,d0		; increase scaling factor
 		cmpi	#17,d0
@@ -939,16 +1391,117 @@ scaleColorsDiff:
 
 ;-----------------------------------------------------------------------
 ;-----------------------------------------------------------------------
+ENDPART_X = 8
+ENDPART_FONT_Y = 12
+ENDPART_MIDSCR = 167
 endPart:
+		lea		CUSTOM,a0
+		lea		copper_blank_purple,a1
+		move.l	a1,COP2LC(a0)
+		WAIT	24
 
+		move.l	mem_bss_chip(pc),a6
+		move.l	a6,d0
+		addi.l	#Scroll_buffer,d0
+		move.l	d0,a3
+		lea		copper_end_bpls1,a2				; set bpl addr
+		bsr		.endSetBplAddr
+		addq	#ENDPART_X,d0					; second line
+		lea		copper_end_bpls2,a2				; set bpl addr
+		bsr		.endSetBplAddr
+
+		bsr		fontPrep_8_12					; out: a2 - font addr
+
+		lea		.endTxt,a1						; print the message
+		move	#ENDPART_X*2,d1
+		bsr		printText_8_12
+
+		lea		copper_end,a1
+		move.l	a1,COP2LC(a0)
+		bsr		vBlank
+
+		lea		copper_end_cols1,a1					; fade in
+		lea		base_purple_palette_4(pc),a2
+		lea		theend_palette(pc),a3
+		moveq	#1,d0
+		bsr		transformColors
+		lea		copper_end_cols2,a1
+		bsr		transformColors
+
+		lea		copper_end_cols1,a1					; fade out
+		lea		base_purple_palette_4(pc),a3
+		lea		theend_palette(pc),a2
+		bsr		transformColors
+		lea		copper_end_cols2,a1
+		bsr		transformColors
+
+		lea		copper_end2,a1
+		move.l	a1,COP2LC(a0)
+		bsr		vBlank
+
+		lea		copper_end2_stripe,a1
+		lea		.offsets(pc),a2
+		lea		.cols(pc),a3
+.shrink1:
+		WAIT	1
+		move.b	(a2)+,d0
+		bmi.s	.shEnd1
+		move	#ENDPART_MIDSCR,d1
+		move	d1,d2
+		sub		d0,d1
+		add		d0,d2
+		move.b	d1,(a1)							; start and end pos
+		move.b	d2,8(a1)
+		move	(a3)+,d1
+		move	d1,6(a1)						; color
+		bra		.shrink1
+.shEnd1:
+
+		move	#111,d0							; shrink to dot
+.shrink2:
+		WAIT	1
+		move	#136,d1
+		move	d1,d2
+		sub		d0,d1
+		add		d0,d2
+		move.b	d1,1(a1)						; start and end pos
+		move.b	d2,9(a1)
+		subi	#10,d0
+		bpl		.shrink2
+		bsr		vBlank
+
+		lea		copper_blank_black,a1
+		move.l	a1,COP2LC(a0)
+		WAIT	50
 		rts
+
+
+.endSetBplAddr:
+		move.l	d0,-(sp)
+		moveq	#1,d7
+.sadr:	move	d0,6(a2)
+		swap	d0
+		move	d0,2(a2)
+		swap	d0
+		lea		8(a2),a2
+		addi.l	#2*ENDPART_X,d0
+		dbf		d7,.sadr	
+		move.l	(sp)+,d0
+		rts
+
+.endTxt:	dc.b	"   THE  "
+			dc.b	"   END  ",0
+	EVEN
+.offsets:	dc.b	70,49,37,29,22,16,11,7,4,2,1,0,-1
+	EVEN
+.cols:		dc.w	$313,$424,$535,$646,$757,$868,$979,$a8a,$bab,$cbc,$eee,$fff
 
 ; ----------- Include other code files
 
     INCLUDE     "os.s"
 	INCLUDE		"LightSpeedPlayer.s"
 	INCLUDE		"c2p.s"
-
+	INCLUDE		"sin.i"
 
 ; ----------- Local data which can be (pc) referenced
 sl:											; state_local
@@ -981,6 +1534,24 @@ BLT_Q_MAX = 200
 blitter_queue:			dc.w	0						; offset in queue
 						dcb.l	BLT_Q_MAX,0
 
+logo_suspect_palette:
+						dc.w		LOGO_COLS		; nr of colours
+						INCBIN		"assets/sct_73_inv.pal"
+logo_eire_palette:
+						dc.w		EIRE_COLS
+						INCBIN		"assets/eire_128x96x16.pal"
+theend_palette:
+						dc.w		4
+						dc.w		BC_PURPLE,$0b9b,$0666,$0ece
+base_purple_palette_16:
+						dc.w		LOGO_COLS
+						dcb.w		16,BC_PURPLE
+base_purple_palette_4:
+						dc.w		4
+						dcb.w		4,BC_PURPLE
+lsys_golden_palette_16:
+						dc.w	BC_PURPLE,$0652,$0762,$0984,$0652,$0762,$0984,$0aa6
+						dc.w	$0541,$0642,$0752,$0974,$0642,$0752,$0974,$0dd9
 end:
     ;echo 		"Total code length: ", (end-s)
 
@@ -997,7 +1568,7 @@ copper_DMAConPatch:
 		dc.w	DMACON, $8000
 		dc.w	COPJMP2, 0
 
-; ----------- Blank coppers
+; ----------- Blank copperlists
 copper_blank_black:
        	dc.w    COLOR00, $000, BPLCON0, $0200  						; 0 bitplanes
 		dc.l	-2
@@ -1005,7 +1576,7 @@ copper_blank_purple:
        	dc.w    COLOR00, $313, BPLCON0, $0200  						; 0 bitplanes
 		dc.l	-2
 
-; ----------- Eire screen coppers
+; ----------- Eire screen copperlist
 copper_eire:
 		dc.w	BPLCON0, $0200  										 ; 0 bitplanes
 		dc.w	DIWSTRT, $6Ce1, DIWSTOP, $0061
@@ -1022,12 +1593,29 @@ copper_eire_logo_bpls:
 		dc.w	BPLCON0, $0200
 		dc.l	-2
 
-; ----------- Scroll screen coppers
+; ----------- L systems copperlist
+copper_lsys:
+		dc.w	BPLCON0, $0200, BPLCON1, LSYS_DISPLACEMENT
+		dc.w	DIWSTRT, $2C81, DIWSTOP, $2aC1
+		dc.w	DDFSTRT, $0048, DDFSTOP, $00C0
+		dc.w	BPL1MOD,0, BPL2MOD,0
+copper_lsys_cols:
+;		dc.w	COLOR00,BC_PURPLE,COLOR01,$0652,COLOR02,$0762,COLOR03,$0984,COLOR04,$0652,COLOR05,$0762,COLOR06,$0984,COLOR07,$0aa6
+;		dc.w	COLOR08,$0541,COLOR09,$0642,COLOR10,$0752,COLOR11,$0974,COLOR12,$0642,COLOR13,$0752,COLOR14,$0974,COLOR15,$0dd9
+		dc.w	COLOR00,BC_PURPLE,COLOR01,$0311,COLOR02,$0623,COLOR03,$0a56,COLOR04,$0412,COLOR05,$0734,COLOR06,$0956,COLOR07,$0b89
+		dc.w	COLOR08,$0411,COLOR09,$0311,COLOR10,$0623,COLOR11,$0a56,COLOR12,$0412,COLOR13,$0734,COLOR14,$0956,COLOR15,$0dbb
+copper_lsys_bpls:
+		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0,BPL4PTH,0,BPL4PTL,0,BPL3PTH,0,BPL3PTL,0
+		dc.w	$2c01,$fffe, BPLCON0, $4200
+		dc.w	$ffdf,$fffe
+		dc.w	$2901,$fffe, BPLCON0, $0200
+		dc.l	-2
+
+; ----------- Scroll screen copperlist
 BC_PURPLE = $313
 scroll_cnt:		dc.w	(SCROLL_LEN-44)*8
 copper_scroll:
-		dc.w	BPLCON0, $0200  										 ; 0 bitplanes
-		dc.w	BPLCON1, $0000  										 ; no scroll
+		dc.w	BPLCON0, $0200, BPLCON1, $0000							 ; 0 bitplanes, no scroll
 		dc.w	DIWSTRT, $2C81, DIWSTOP, $1EC1
 		dc.w	DDFSTRT, $0038, DDFSTOP, $00D0
 copper_scroll_logo_cols:
@@ -1061,6 +1649,37 @@ copper_scroll_ypos:
 		dc.w	$1d01,$fffe, BPLCON0, $0200
 		dc.l	-2
 
+; ----------- End screen copperlist
+copper_end:
+		dc.w	BPLCON0, $0200, BPLCON1, $0088
+		dc.w	DIWSTRT, $2C81, DIWSTOP, $1EC1
+		dc.w	DDFSTRT, $0070, DDFSTOP, $0088
+		dc.w	BPL1MOD,3*ENDPART_X, BPL2MOD,3*ENDPART_X
+copper_end_cols1:
+		dc.w	COLOR00,BC_PURPLE,COLOR01,BC_PURPLE,COLOR02,BC_PURPLE,COLOR03,BC_PURPLE
+copper_end_bpls1:
+		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0
+		dc.w	$9901,$fffe, BPLCON0, $2200
+		dc.w	$a501,$fffe, BPLCON0, $0200
+copper_end_cols2:
+		dc.w	COLOR00,BC_PURPLE,COLOR01,BC_PURPLE,COLOR02,BC_PURPLE,COLOR03,BC_PURPLE
+copper_end_bpls2:
+		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0
+		dc.w	$a901,$fffe, BPLCON0, $2200
+		dc.w	$b501,$fffe, BPLCON0, $0200
+		dc.l	-2
+
+copper_end2:
+		dc.w	COLOR00,0
+		dc.w	BPLCON0, $0200
+copper_end2_stripe:
+		dc.w	$5001,$fffe, COLOR00,BC_PURPLE
+		dc.w	$fff1,$fffe, COLOR00,0
+		dc.l	-2
+
+
+bobs:
+   	INCBIN		"assets/shrinkingdots_8.bpl"
 	EVEN
 LSP_Bank:
 	ifd	MUSIC_ON
@@ -1095,15 +1714,6 @@ LSP_Music:
    	INCBIN		"assets/Bartesek - Hey Simone!.lsmusic"
 	endif
 	EVEN
-logo_suspect_palette:
-	dc.w		LOGO_COLS		; nr of colours
-   	INCBIN		"assets/sct_73_inv.pal"
-base_purple_palette:
-	dc.w		LOGO_COLS
-	dcb.w		16,BC_PURPLE
-logo_eire_palette:
-	dc.w		EIRE_COLS
-   	INCBIN		"assets/eire_128x96x16.pal"
 font_16_15_1:
    	INCBIN		"assets/font_16x15x1.bpl"
 font_8_12_4:
@@ -1129,16 +1739,20 @@ SCROLL_CHARS = 60
 
 	RSRESET
 	Logo_screen1:				rs.b	LOGO_SIZE
-	Logo_trans_buffer:			rs.b	LOGO_SIZE*(LOGO_TRANS_NR-2)
+	LS_Screen2:					rs.b	LSYS_X*LSYS_Y
 	Scroll_buffer:				rs.b	SCROLL_LEN*2*SCROLL_Y
+	Logo_trans_buffer:			rs.b	LOGO_SIZE*(LOGO_TRANS_NR-2)
 	BSS_CHIP_2:					rs.w	0
+
+LS_Screen1 = Logo_screen1
 
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_1
 	if BSS_CHIP_2 > BSS_CHIP_ALLOC_MAX
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_2
 	endif
 
-	 echo 		"scrb: ", SCROLL_LEN*2*SCROLL_Y
+	;  echo 		"scrb: ", SCROLL_LEN*2*SCROLL_Y
+	;  echo 		"logo: ", LOGO_SIZE
 
 	; echo 		"BSS 1: ", BSS_CHIP_1
 	; echo 		"BSS 2: ", BSS_CHIP_2
@@ -1154,6 +1768,10 @@ mbp:
 	Logo_chunky_Scoopex:		rs.b	LOGO_SIZE_X*LOGO_SIZE_Y				; do no change the order of this and previous row
 	Logo_chunky_buffer:			rs.b	LOGO_SIZE_X*LOGO_SIZE_Y
 	Font_16_aligned:			rs.b	32*SCROLL_CHARS
+	LS_recursion_tab1:			rs.b	LSYS_RECTAB_MAX_LEN
+	LS_bobs_tab1:				rs.b	LSYS_BOBS_MAX_LEN
+	LS_recursion_tab2:			rs.b	LSYS_RECTAB_MAX_LEN
+	LS_bobs_tab2:				rs.b	LSYS_BOBS_MAX_LEN
 	BSS_PUBLIC_ALLOC_MAX:		rs.w	0
 
 	ds.b		BSS_PUBLIC_ALLOC_MAX
