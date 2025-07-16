@@ -41,47 +41,29 @@ s:
 		lea		mem_bss_chip(pc),a2
 		lea		mbc,a1
 		move.l	a1,(a2)
-		lea		mem_data_public(pc),a2
-		lea		mdp,a1
-		move.l	a1,(a2)
-		lea		mem_data_chip(pc),a2
-		lea		mdc,a1
-		move.l	a1,(a2)
 
-		lea		copper_base-mdc(a1),a2
+		; moveq	#20,d0
+		; bsr		setMusicPos
+
+		lea		copper_base,a2
 		move.l	a2,COP1LC(a0)
-		lea		copper_blank_black-mdc(a1),a2
+		lea		copper_blank_black,a2
 		move.l	a2,COP2LC(a0)
 		move	#0,COPJMP1(a0)
 		move	#INTF_SETCLR|INTF_INTEN|INTF_VERTB|INTF_COPER,INTENA(a0)		; enable selected interrupts
 		move	#DMAF_SETCLR|DMAF_DMAEN|DMAF_BPLEN|DMAF_COPEN|DMAF_BLTEN,DMACON(a0)
 
-		; moveq	#20,d0
-		; bsr		setMusicPos
+		lea		sinus_14b_256(pc),a1
+		moveq	#63,d7
+.mkCos:	move	(a1)+,256*2-2(a1)					; make extend sine to cosine 
+		dbf		d7,.mkCos
+
 parts:
 ;		bsr		swipeScreenAtStart
 ;		bsr		eirePart
-		bsr		lsystemPart
+;		bsr		lsystemPart
 		bsr		scrollPart
 		bsr		endPart
-
-; 		lea		sl(pc),a1							; if music finished then go straight to exit
-; 		tst		music_finished-sl(a1)
-; 		bne.s	exit
-
-; 		lea		CUSTOM,a0
-; 		move.l	mem_data_chip(pc),a1
-; 		lea		copper_blank_purple-mdc(a1),a2
-; 		move.l	a2,COP2LC(a0)
-; 		lea		sl(pc),a2
-; infiniLoop:
-; 		VBLANKNL 30
-; 		tst		beat_strobe-sl(a2)
-; 		beq		.noStrobe
-; 		move	#$e5e,COLOR00(a0)
-; .noStrobe:
-; 		btst.b    #6,CIAA
-;         bne.s     infiniLoop
 
 exit:
         bsr     OsRestore
@@ -117,23 +99,10 @@ interruptL3:
 interruptL3Copper:
 		movem.l	d0-d2/a0-a6,-(sp)
 		ifd	MUSIC_ON
-		lea		sl(pc),a1
-		tst		music_lastpos-sl(a1)		; check when the last position is played, then stop the music and indicate it's finished
-		beq		.noCheckEnd
-		move.w	(LSP_State+m_currentSeq)(pc),d0
-		bne		.cont1
-		st		music_finished-sl(a1)
-        clr.l   d0
-		lea		CUSTOM,a0
-		move.l	d0,AUD0VOL(a0)			    ; all volume to 0 and dat to 0
-		move.l	d0,AUD1VOL(a0)
-		move.l	d0,AUD2VOL(a0)
-		move.l	d0,AUD3VOL(a0)
-		move.w	#$00ff,ADKCON(a0)		    ; clear audio 		
-		bra		.skipMus
-.noCheckEnd:
-		move.w	(LSP_State+m_currentSeq)(pc),music_lastpos-sl(a1)		; music pos
-.cont1:
+		lea		music_ticks_left(pc),a1
+		tst		(a1)
+		beq.s	.skipMus				; play only for the number of ticks set when initialising the music
+		subi	#1,(a1)
 		lea		CUSTOM+AUD0LCH,a6		; always set a6 to dff0a0 before calling LSP tick
 		bsr		LSP_MusicPlayTick		; player music tick
 .skipMus:
@@ -148,13 +117,12 @@ interruptL3Copper:
 		move	beat_next(pc),d0
 		cmp		tick_cnt-sl(a1),d0
 		bne.s	.noBeat
-		addq	#1,beat-sl(a1)				; count beats
+		addq.w	#1,beat-sl(a1)				; count beats (absolute counter)
+		addq.w	#1,beat_relative-sl(a1)		; count beats (relative counter)
 		addi	#MUS_TPB,beat_next-sl(a1)	; move to next beat
 		move	beat-sl(a1),beat_strobe-sl(a1)
 .noBeat:
 		addq	#1,tick_cnt-sl(a1)			; increase tick (frame) counter
-
-
 		movem.l	(sp)+,d0-d2/a0-a6
 		move	#$10,CUSTOM+INTREQ		; clear COPER INTREQ
 		move	#$10,CUSTOM+INTREQ		; double just in case to prevent any error in emu or fast CPU from calling the int again too fast
@@ -229,24 +197,27 @@ initMusic:
 		lea		LSP_Bank,a1
 		lea		copper_DMAConPatch+3,a2
 		bsr		LSP_MusicInit
+		lea		music_ticks_left(pc),a1
+		move	d0,(a1)					; save music length in ticks
 		endif
 		rts
 
 ; Set music position and recalc related variables. Each pos has 8 beats (24 ticks each) and each beat 8 notes (3 ticks each).
-; in: d0 - seq position (from 0 to last seq of the song)
+; in: d0 - seq position (from 0 to last seq of the song, e.g. 23)
 setMusicPos:
-		movem.l	d1-d2/a0,-(sp)
+		movem.l	ALL,-(sp)
 		move	#MUS_TPN*64,d1			; length of one pos (64 notes) in ticks
 		mulu	d0,d1
-		lea		sl(pc),a0
-		move 	d1,tick_cnt-sl(a0)
+		lea		sl(pc),a1
+		sub		d1,music_ticks_left-sl(a1)	; fix ticks left in music
+		move 	d1,tick_cnt-sl(a1)		; fix current tick
 		move	d0,d2
 		lsl		#3,d2					; 8 beats per pos
-		move 	d2,beat-sl(a0)
+		move 	d2,beat-sl(a1)
 		addi	#MUS_TPB,d1
-		move 	d1,beat_next-sl(a0)
-		bsr		LSP_MusicSetPos			; move actual mus
-		movem.l	(sp)+,d1-d2/a0
+		move 	d1,beat_next-sl(a1)
+		bsr		LSP_MusicSetPos			; move actual music
+		movem.l	(sp)+,ALL
 		rts
 
 ; d0 - delay after strobe
@@ -256,6 +227,12 @@ syncToStrobe:
 		beq.s	.noStr
 .delay:	VBLANKS
 		dbf		d0,.delay
+		rts
+
+; just reset the relative beat for local counting
+resetRelativeBeat:
+		lea		beat_relative(pc),a1
+		move	#0,(a1)
 		rts
 
 vBlank:
@@ -357,6 +334,7 @@ LSYS_DISPLACEMENT = 3
 LSYS_BOBSTRIP = 32
 LSYS_RECTAB_MAX_LEN = 400
 LSYS_BOBS_MAX_LEN = 600		; 250 bobs
+
 lsystemPart:
 		lea		CUSTOM,a0
 		lea		copper_blank_purple,a1
@@ -366,7 +344,7 @@ lsystemPart:
 		move.l	mem_bss_chip(pc),a6
 		move.l	a6,d0
 		addi.l	#LS_Screen1,d0
-		lea		lsysScreens(pc),a3
+		lea		lsys_Screens(pc),a3
 		move.l	d0,(a3)							; buffer screen
 		lea		copper_lsys_bpls,a2				; d0 - addr, a2 bpl pointers
 		bsr		lsysSetBplAddr
@@ -374,6 +352,13 @@ lsystemPart:
 		move.l	a6,d0
 		addi.l	#LS_Screen2,d0
 		move.l	d0,4(a3)						; active screen (later)
+
+		WAITBLIT
+		move.l	#-1,BLTAFWM(a0)					; blitter config part that does not change
+		move	#LSYS_BOBSTRIP-4,BLTAMOD(a0)
+		move	#LSYS_X-4,BLTBMOD(a0)
+		move	#LSYS_X-4,BLTDMOD(a0)
+		move	#0,BLTCON1(a0)
 
 		move.l	d0,a1							; clear screens
 		move	#LSYS_Y<<6+LSYS_X/2,d0			; a1 addr, d0 size
@@ -385,12 +370,6 @@ lsystemPart:
 		lea		copper_lsys,a2
 		move.l	a2,COP2LC(a0)
 		bsr		vBlank
-
-		move.l	#-1,BLTAFWM(a0)					; blitter config part that does not change
-		move	#LSYS_BOBSTRIP-4,BLTAMOD(a0)
-		move	#LSYS_X-4,BLTBMOD(a0)
-		move	#LSYS_X-4,BLTDMOD(a0)
-		move	#0,BLTCON1(a0)
 
 		lea		lsys_p1(pc),a1
 		move.l	mem_bss_public(pc),a5
@@ -406,42 +385,321 @@ lsystemPart:
 		adda.l	#LS_bobs_tab1,a1
 		lea		lsys_p1(pc),a3
 		bsr		lsysCalcBobs
+		lea		lsys_Bob_Tab_Ptr(pc),a3
+		move.l	a1,(a3)							; start from the beginning of the bobs table
 
 		move.l	mem_bss_public(pc),a1
 		adda.l	#LS_bobs_tab2,a1
 		lea		lsys_p2(pc),a3
 		bsr		lsysCalcBobs
 
+		moveq	#0,d0							; no delay after strobe
+		bsr		syncToStrobe					; sync beat counter to next beat
+		bsr		resetRelativeBeat
+
+		lea		lsysPlaySequence1(pc),a1		; play the first sequence from L3 int
+		bsr		intL3ProcSet
+
+		bsr		logoTransformPrecalc			; prepare logo anims while the first part plays in L3
+
+		lea		lsys_finished(pc),a1
+.checkFinishedPart1:
+		bsr		vBlank
+		tst		(a1)
+		beq		.checkFinishedPart1
+
+.mainLoopLSystem:								; play the second part and move on
+		bsr		vBlank
+		bsr		lsysPlaySequence2
+		bne		.mainLoopLSystem
+		rts
+
+;------------------------------
+; L3 int part
+lsysPlaySequence1:
+		movem.l	d1-d7/a0/a2-a6,-(sp)			; the other flags are remembered in the L3 int
+		lea		CUSTOM,a0
+		lea		parts_state(pc),a6				; init etc. state
+
+		tst.b	flash_cnt-parts_state(a6)		; clear color flash
+		beq		.noFlashClr
+		lea		copper_lsys_cols,a5
+		move	flash_ofs-parts_state(a6),d0
+		move	flash_col-parts_state(a6),(a5,d0.w)
+		clr.b	flash_cnt-parts_state(a6)
+.noFlashClr:
+
+LSYS_START_BEAT = 9
+;	move #$f00,COLOR00(a0)
+		move	beat_relative(pc),d0
+		cmp		#LSYS_START_BEAT,d0
+		bge		.finished
+		tst		beat_strobe-parts_state(a6)
+		beq		.noS1
+		move	#$fff,d1
+		move	#$0dbb,d2
+		move	#15*4+2,d3
+		bsr		lsysFlashCol
+.noS1:	bsr		lsysDrawBobs
+		bra		.exit
+.finished:
+		st		lsys_finished-parts_state(a6)
+		bsr		intL3ProcClear
+;	move #$000,COLOR00(a0)
+.exit:
+		movem.l	(sp)+,d1-d7/a0/a2-a6
+		rts
+
+;--------------------------------------------
+; normal looped part
+lsysPlaySequence2:
+		lea		CUSTOM,a0
+		lea		parts_state(pc),a6				; init etc. state
+
+		tst.b	flash_cnt-parts_state(a6)		; clear color flash
+		beq		.noFlashClr2
+		lea		copper_lsys_cols,a5
+		move	flash_ofs-parts_state(a6),d0
+		move	flash_col-parts_state(a6),(a5,d0.w)
+		clr.b	flash_cnt-parts_state(a6)
+.noFlashClr2:
+
+;	move #$f00,COLOR00(a0)
+		move	beat_relative(pc),d0
+		cmp		#LSYS_START_BEAT+8,d0
+		bge		.part3
+		tst.b	(a6)
+;		bne.s	.p2main
+		bne.s	.p3main
+		st		(a6)
+		move.l	mem_bss_public(pc),a1			; part 2 init - do only once
+		adda.l	#LS_bobs_tab1,a1
+		move.l	a1,lsys_Bob_Tab_Ptr-parts_state(a6)							; start from the beginning of the bobs table
+		bsr		.flashWhite
+		bra		.p3main
+; .p2main:
+; 		bsr		lsysSwitchScreens
+; 		bsr		.sinZoom
+; 		bsr		lsysRotateBobs
+; 		bra		.exit
+
+;--------
+.part3:
+		cmp		#LSYS_START_BEAT+8+8,d0
+		bge		.part4
+		tst.b	1(a6)
+		bne.s	.p3main
+		st		1(a6)
+		lea		lsys_Bob_Angle(pc),a5
+		move	#-2,2(a5)						; speed reverse
+		bsr		.flashWhite
+		move	#BC_PURPLE,15*4+2(a5)			; a5 is set to copper colorlist in the preceding bsr
+.p3main:
+		bsr		lsysSwitchScreens
+		bsr		.sinZoom
+		bsr		lsysRotateBobs
+		bra		.exit
+
+;--------
+.part4:
+		cmp		#LSYS_START_BEAT+8+8+8,d0
+		bge		.part5
+		tst.b	2(a6)
+		bne.s	.p4main
+		st		2(a6)
+		move.l	lsys_Screens(pc),a1				; clear foreground screen
+		move	#LSYS_Y<<6+LSYS_X/2,d0
+		bsr		lsysClearScr
+		WAITBLIT
+		move.l	a1,d0
+		lea		copper_lsys_bpls,a2				; d0 - addr, a2 bpl pointers
+		bsr		lsysSetBplAddr
 
 		move.l	mem_bss_public(pc),a1
 		adda.l	#LS_bobs_tab2,a1
-		lea		lsysBobTabPtr(pc),a3
+		lea		lsys_Bob_Tab_Ptr(pc),a3
 		move.l	a1,(a3)							; start from the beginning of the bobs table
+		lea		copper_lsys_cols,a1
+		lea		lsys_golden_palette_16(pc),a2
+		bsr		setColors
+		bsr		.flashWhite
+		bra		.p4m2
+.p4main:
+		bsr		.flashPurple
+.p4m2:	;moveq	#0,d7							; speed - how many bobs to draw at once
+		bsr		lsysDrawBobs
+		bra		.exit
 
+;--------
+.part5:
+		cmp		#LSYS_START_BEAT+8+8+8+8,d0
+		bge		.part6
+		tst.b	3(a6)
+;		bne.s	.p5main
+		bne.s	.p6main
+		st		3(a6)
+		move.l	mem_bss_public(pc),a1
+		adda.l	#LS_bobs_tab2,a1
+		lea		lsys_Bob_Tab_Ptr(pc),a3
+		move.l	a1,(a3)							; back to beginning of the bobs table
+		lea		lsys_Bob_Angle(pc),a5
+		move	#2,2(a5)						; speed reverse
+		move	#0,6(a5)						; no zoom
+		bra		.p6_2
+; 		bsr		.flashWhite
+; 		bra		.p5m2
+; .p5main:
+; 		bsr		.flashPurple
+; .p5m2:	bsr		lsysSwitchScreens
+; 		lea		lsys_bob_change_tab(pc),a1		; advance bob animation to next one
+; 		addi	#1,(a1)
+; 		bsr		lsysRotateBobs
+; 		bra		.exit
 
-.mainLoopLSystem:
-		bsr		vBlank
-
-	move #$f00,COLOR00(a0)
-
-		bsr		lsysSwitchScreens
-
-		moveq	#1,d7							; speed - how many bobs to draw at once
-;		bsr		lsysDrawBobs
-
-		move.l	lsysScreens(pc),a1
-		move	#LSYS_Y<<6+LSYS_X/2,d0
-		bsr		lsysClearScr
-
+;--------
+.part6:
+		cmp		#LSYS_START_BEAT+8+8+8+8+8,d0
+		bge		.part7
+		tst.b	4(a6)
+		bne.s	.p6main
+		st		4(a6)
+		lea		lsys_Bob_Angle(pc),a5
+		move	#-4,2(a5)						; speed reverse
+.p6_2:	bsr		.flashWhite
+		bra		.p6m2
+.p6main:
+		bsr		.flashPurple
+.p6m2:	bsr		lsysSwitchScreens
+		lea		lsys_bob_change_tab(pc),a1		; advance bob animation to next one
+		addi	#1,(a1)
 		bsr		lsysRotateBobs
+		bra		.exit
 
-	move #$000,COLOR00(a0)
+;--------
+.part7:
+		cmp		#LSYS_START_BEAT+8+8+8+8+8+8,d0
+		bge		.part8
+		tst.b	5(a6)
+		bne.s	.p8main
+		; bne.s	.p7main
+		st		5(a6)
+		lea		lsys_Bob_Angle(pc),a5
+		move	#6,2(a5)						; speed reverse
+;		bra		.p8_2
+ 		bsr		.flashWhite
+		move	#BC_PURPLE,15*4+2(a5)			; a5 is set to copper colorlist in the preceding bsr
+		bra		.p9_2
+; 		bra		.p7m2
+; .p7main:
+; 		bsr		.flashPurple
+; .p7m2:	bra		.p9_2
+		; bsr		lsysSwitchScreens
+		; lea		lsys_bob_change_tab(pc),a1		; advance bob animation to next one
+		; addi	#1,(a1)
+		; bsr		.sinZoom
+		; bsr		lsysRotateBobs
+		; bra		.exit
 
-		btst.b  #6,CIAA
-        bne	    .mainLoopLSystem
+;--------
+.part8:
+		cmp		#LSYS_START_BEAT+8+8+8+8+8+8+8,d0
+		bge		.part9
+		tst.b	6(a6)
+		bne.s	.p8main
+		st		6(a6)
+		lea		lsys_Bob_Angle(pc),a5
+		move	#-10,2(a5)						; speed reverse
+.p8_2:	bsr		.flashWhite
+		move	#$0cc7,15*4+2(a5)			; a5 is set to copper colorlist in the preceding bsr
+		bra		.p8m2
+.p8main:
+		bsr		.flashPurple
+.p8m2:	bra		.p9_2
+		; bsr		lsysSwitchScreens
+		; lea		lsys_bob_change_tab(pc),a1		; advance bob animation to next one
+		; addi	#1,(a1)
+		; bsr		.sinZoom
+		; bsr		lsysRotateBobs
+		; bra		.exit
 
+;--------  $0c98 d77
+.part9:
+		cmp		#LSYS_START_BEAT+8+8+8+8+8+8+8+4,d0
+		bge		.finished
+		subi.b	#1,7(a6)
+		bne		.noB
+		move.b	#4,7(a6)
+		lea		bobs,a1
+		moveq	#15,d7
+		moveq	#0,d6
+.mb:	REPT	7
+		move.l	4(a1),(a1)+						; move bobs left and clear the last one
+		ENDR
+		move.l	d6,(a1)+
+		dbf		d7,.mb
+.noB:
+.p9_2:	bsr		lsysSwitchScreens
+		lea		lsys_bob_change_tab(pc),a1		; advance bob animation to next one
+		addi	#1,(a1)
+		bsr		.sinZoom
+		bsr		lsysRotateBobs
+		bra		.exit
+
+;--------
+.finished:
+		moveq	#0,d0							; if finished return 0
+		rts
+.exit
+		moveq	#1,d0							; otherwise 1 = not yet finished
 		rts
 
+;------------------------------
+; perform sin-based zooming
+.sinZoom:
+		lea		lsys_Bob_Angle(pc),a1
+		moveq	#0,d0
+		move	6(a1),d0						; zoom index
+		addi	#1,d0
+		cmpi	#2*MUS_TPB,d0
+		blo		.ns1
+		moveq	#0,d0
+.ns1:	move	d0,6(a1)
+		lea		scroll_sin+1(pc),a2
+		move.b	(a2,d0.w),d0					; sin value
+		moveq	#33,d1
+		sub		d0,d1
+		move	d1,4(a1)						; zoom factor
+		rts
+
+.flashPurple:
+		tst		beat_strobe-parts_state(a6)
+		beq		.noS2
+		move	#$424,d1
+		move	#BC_PURPLE,d2
+		move	#2,d3
+		bra		lsysFlashCol
+.noS2:	rts
+.flashWhite:
+		move	#$fff,d1
+		move	#BC_PURPLE,d2
+		move	#2,d3
+; flash given copper color for 1 frame
+; d1 - color to flash, d2 - color to return to, d3 - color table offset
+lsysFlashCol:
+		lea		copper_lsys_cols,a5
+		move	d1,(a5,d3.w)
+		move	d3,flash_ofs-parts_state(a6)
+		move	d2,flash_col-parts_state(a6)
+		st		flash_cnt-parts_state(a6)
+		rts
+
+parts_state:		dc.b	0,0,0,0,0,0,0,6
+flash_cnt:			dc.w	0
+flash_ofs:			dc.w	0
+flash_col:			dc.w	0
+		EVEN
+
+;------------------------------
 ; a1 - adr, d0 - H<<6+W/2
 lsysClearScr:
 		WAITBLIT
@@ -469,63 +727,48 @@ lsysSetBplAddr:
 		move.l	(sp)+,d0
 		rts
 
+; Switch screens and clear buffer screen
 lsysSwitchScreens:
-		lea		lsysScreens(pc),a3
+		lea		lsys_Screens(pc),a3
 		move.l	(a3),d0
 		move.l	4(a3),d1
 		move.l	d1,(a3)
 		move.l	d0,4(a3)						; drawn screen becomes visible
 		lea		copper_lsys_bpls,a2				; d0 - addr, a2 bpl pointers
 		bsr		lsysSetBplAddr
+
+		move.l	d1,a1							; clear buffer screen
+		move	#LSYS_Y<<6+LSYS_X/2,d0
+		bsr		lsysClearScr
 		rts
 
+lsys_bob_change_tab:	dc.w	0, 0,4,8,12,16,20,24,28,28,24,20,16,12,8,4,0		; index + bob offsets
 ;------------------------------
-; a0 - custom, a1 - scr, a2 - bob, d0 - X, d1 - Y
-; lsysPrintBob:
-; 		movem.l	d0-d2/a3,-(sp)
-; 		ror		#4,d0
-; 		move	d0,d2
-; 		andi	#$f000,d2
-; 		ori		#$0dfc,d2
-; 		andi	#$0fff,d0
-; 		add		d0,d0
-; 		lsl		#5,d1					; screen width is 32 bytes
-; 		add		d0,d1
-; 		lea		(a1,d1.w),a3
-
-; 		WAITBLIT
-; 		move.l	a2,BLTAPT(a0)
-; 		move	d2,BLTCON0(a0)
-; 		move.l	a3,BLTBPT(a0)
-; 		move.l	a3,BLTDPT(a0)
-; 		move	#16<<6+2,BLTSIZE(a0)
-; 		movem.l	(sp)+,d0-d2/a3
-; 		rts
-
-
-;------------------------------
-; a0 - custom, lsysBobTabPtr has to be initialised with a pointer to the bob table.
+; a0 - custom, lsys_Bob_Tab_Ptr has to be initialised with a pointer to the bob table.
 lsysRotateBobs:
-;		move.l	mem_bss_chip(pc),a1
-;		adda.l	#Logo_screen1,a1
-		move.l	lsysScreens(pc),a1					; buffer screen
-		move.l	lsysBobTabPtr(pc),a4
+		move.l	lsys_Screens(pc),a1					; buffer screen
+		move.l	lsys_Bob_Tab_Ptr(pc),a4
 		lea		bobs,a6
-		lea		lsysBobAngle(pc),a5
-		move	2(a5),d7
+		lea		lsys_Bob_Angle(pc),a5
+		move	2(a5),d7							; speed
 		add		d7,(a5)								; progress rotation
 		move	(a5),d7
-		andi	#511,d7
+		andi	#510,d7
+		move	4(a5),d6							; zoom (15 bits, 0=none)
 		lea		sinus_14b_256+32*2(pc),a5
 .drawLoop:
 		move	(a4)+,d0
 		bmi		.finished
 		move	(a4)+,d1
-		move	(a4)+,d2
-		lea		(a6,d2.w),a2
+		move	lsys_bob_change_tab(pc),d2			; shift bob image by a certain index if required
+		add		(a4)+,d2
+		andi	#$1c,d2					; limit to 8 bobs + filter out the low counter bits
+		move	lsys_bob_change_tab+2(pc,d2.w),d2		; shift bobs by an indexed value
+		lea		(a6,d2.w),a2			; bob addr
 
 		subi	#120,d0					; centre
 		subi	#120,d1
+
 		asl		#2,d0
 		asl		#2,d1
 		move	d0,d2
@@ -544,6 +787,13 @@ lsysRotateBobs:
 		add		d2,d3
 		move	d3,d1					; y'
 
+		tst		d6
+		beq		.noZoom
+		muls	d6,d0					; simple zoom with scale 0-32
+		asr		#5,d0
+		muls	d6,d1
+		asr		#5,d1
+.noZoom:
 		addi	#120,d0
 		addi	#120,d1
 
@@ -569,22 +819,19 @@ lsysRotateBobs:
 .finished:
 		rts
 
+
 ;------------------------------
-; a0 - custom, d7 - nr to draw. lsysBobTabPtr has to be initialised with a pointer to the bob table.
+; a0 - custom, (d7 - nr to draw). lsys_Bob_Tab_Ptr has to be initialised with a pointer to the bob table.
 lsysDrawBobs:
-		; move.l	mem_bss_chip(pc),a1
-		; adda.l	#Logo_screen1,a1
-		move.l	lsysScreens(pc),a1					; buffer screen
-		move.l	lsysBobTabPtr(pc),a4
+		move.l	lsys_Screens(pc),a1					; buffer screen
+		move.l	lsys_Bob_Tab_Ptr(pc),a4
 		lea		bobs,a6
-	; move.l	a4,a5
 .drawLoop:
 		move	(a4)+,d0
 		bmi.s	.finished
 		move	(a4)+,d1
 		move	(a4)+,d2
 		lea		(a6,d2.w),a2
-;		bsr 	lsysPrintBob
 
 		ror		#4,d0
 		move	d0,d2
@@ -597,28 +844,23 @@ lsysDrawBobs:
 		lea		(a1,d1.w),a3
 
 		WAITBLIT
+		move	#LSYS_X-4,BLTDMOD(a0)
 		move.l	a2,BLTAPT(a0)
 		move	d2,BLTCON0(a0)
 		move.l	a3,BLTBPT(a0)
 		move.l	a3,BLTDPT(a0)
 		move	#16<<6+2,BLTSIZE(a0)
+		;dbf		d7,.drawLoop
 
-		dbf		d7,.drawLoop
-
-		lea		lsysBobTabPtr(pc),a3	; save pointer to where processing finished
+		lea		lsys_Bob_Tab_Ptr(pc),a3	; save pointer to where processing finished
 		move.l	a4,(a3)
 		bra		.exit
 .finished:
 		suba	#2,a4					; go back to the end marker
-		lea		lsysBobTabPtr(pc),a3	; save pointer
+		lea		lsys_Bob_Tab_Ptr(pc),a3	; save pointer
 		move.l	a4,(a3)
 .exit:
-
-	; suba.l	a5,a4
-	; move	a4,l_bob_nr
 		rts
-
-; l_bob_nr:	dc.w	0
 
 ;------------------------------
 ; a3 - L system params, a1 - bobs tab
@@ -635,7 +877,7 @@ lsysCalcBobs:
 		move	d3,(a1)+
 
 		move.l	LSYS_OFS_RFN(a3),a4					; iteration sequence to print
-		lea		l_rotation_tab(pc),a5
+		lea		lsys_rotation_tab(pc),a5
 
 .lParseLoop:
 		moveq	#0,d6
@@ -656,7 +898,7 @@ lsysCalcBobs:
 		bra		.lParseLoop
 .lJustDraw:
 		add		(a5,d2),d0							; change x and y by whatever the current rotation is
-		add		2(a5,d2),d1							; change x and y by whatever the current rotation is
+		add		2(a5,d2),d1
 		move	d0,(a1)+
 		move	d1,(a1)+
 		move	d3,(a1)+
@@ -719,16 +961,9 @@ lsysCreateIterations:
 		move.l	a3,a6
 		dbf		d7,.ciIter
 
-	; move.l	mem_bss_public(pc),a6
-	; adda.l	#LS_recursion_tab,a6
-	; suba	a6,a3
-	; move	a3,lsys_Len
-
 		move.l	a2,LSYS_OFS_RFN(a1)		; final recursion table addr
 		movem.l	(sp)+,ALL
 		rts
-
-; lsys_Len:	dc.w	0
 
 		RSRESET
 		LSYS_OFS_X:		rs.w	1
@@ -739,18 +974,6 @@ lsysCreateIterations:
 		LSYS_OFS_RFN:	rs.l	1
 		LSYS_OFS_Ax:	rs.w	1
 		LSYS_OFS_Rules:	rs.w	1
-
-
-; lsys_p1:
-; .l_p1:		dc.w	25,200,18,5		; x, y, angle offset (0-23), starting bob index(0-7)
-; 			dc.w	3				; recursions
-; 			dc.l	0				; final recursion adress
-; 			dc.w	.l_a1-.l_p1
-; 			dc.b	0,.l_r1_1-.l_p1,.l_r1_2-.l_p1,.l_r1_3-.l_p1
-; .l_a1:		dc.b	1,0				; axiom
-; .l_r1_1:	dc.b	3,2,26,3,1,26,3,2,0
-; .l_r1_2:	dc.b	3,1,34,3,2,34,3,1,0
-; .l_r1_3:	dc.b	3,0
 
 lsys_p1:
 .l_p1:		dc.w	120,120,2,0		; x, y, angle offset (0-23), starting bob index
@@ -770,18 +993,18 @@ lsys_p2:
 			dc.l	0				; final recursion adress
 			dc.w	.l_a1-.l_p1
 			dc.b	0,.l_r1_1-.l_p1,.l_r1_2-.l_p1,0
-;.l_a1:		dc.b	1,0				; axiom
 .l_a1:		dc.b	-1,38,1,-2,-1,46,1,-2,1,0				; axiom
 .l_r1_1:	dc.b	2,31,2,31,2,-1,33,1,-2,28,1,0
 .l_r1_2:	dc.b	2,0
 
 
-lsysBobTabPtr:	dc.l	0
-lsysScreens:	dc.l	0,0			; buffer screen, acive screen
-lsysBobAngle:	dc.w	0, -2			; angle, speed
+lsys_Bob_Tab_Ptr:	dc.l	0
+lsys_Screens:		dc.l	0,0				; buffer screen, acive screen
+lsys_Bob_Angle:		dc.w	-4, 2, 0, 0		; current angle (0-510 step 2), speed, zoom (32-0), zoom sin pos
+lsys_finished:		dc.w	0				; 1 - flag indicating that the whole lsys part is finished
 
 		EVEN
-l_rotation_tab:		dc.w	0,10,-3,9,-5,8,-8,7,-9,5,-10,2, -10,0,-10,-3,-9,-5,-8,-8,-5,-9,-3,-10, 0,-10,3,-10,5,-8,8,-8,9,-5,10,-3, 10,0,9,3,8,5,7,8,5,8,3,9	; 24 - evey 15 degs
+lsys_rotation_tab:	dc.w	0,10,-3,9,-5,8,-8,7,-9,5,-10,2, -10,0,-10,-3,-9,-5,-8,-8,-5,-9,-3,-10, 0,-10,3,-10,5,-8,8,-8,9,-5,10,-3, 10,0,9,3,8,5,7,8,5,8,3,9	; 24 - evey 15 degs
 		EVEN
 
 ;-----------------------------------------------------------------------
@@ -791,7 +1014,7 @@ scrollPart:
 		lea		copper_blank_purple,a1
 		move.l	a1,COP2LC(a0)
 		bsr		vBlank
-		bsr		logoTransformPrecalc						; prepare logo anims
+;		bsr		logoTransformPrecalc						; prepare logo anims - this is done in the previous part
 
 		move.l	mem_bss_chip(pc),a6
 		lea		logo_trans_frames(pc),a5
@@ -835,8 +1058,8 @@ scrollPart:
 .noBlend:
 
 		lea		sl(pc),a1					; if music finished then finish part
-		tst		music_finished-sl(a1)
-		bne.s	.exit
+		tst		music_ticks_left-sl(a1)
+		beq		.exit
 
 		btst.b  #6,CIAA
         bne	    .mainLoopScroll
@@ -871,7 +1094,7 @@ scrollMove:
 		bne.s	.smJump
 		add		#1,6+8(a1)
 .smJump:
-		lea		.scroll_sin(pc),a1
+		lea		scroll_sin(pc),a1
 		moveq	#0,d0
 		move.b	(a1),d0				; counter 23..0
 		subq	#1,d0
@@ -890,7 +1113,7 @@ scrollMove:
 ;		movem.l	(sp)+,a1/d0
 		rts
 
-.scroll_sin:		dc.b	MUS_TPB*2,1,2,3,4,5,6,7,8,9,10,11,12,12,13,14,14,15,15,16,16,16,17,17,17,17,17,17,17,16,16,16,15,15,14,14,13,12,12,11,10,9,8,7,6,5,4,3,2
+scroll_sin:		dc.b	MUS_TPB*2,1,2,3,4,5,6,7,8,9,10,11,12,12,13,14,14,15,15,16,16,16,17,17,17,17,17,17,17,16,16,16,15,15,14,14,13,12,12,11,10,9,8,7,6,5,4,3,2
 		EVEN
 
 ; ------------------------------------------
@@ -1501,19 +1724,23 @@ endPart:
     INCLUDE     "os.s"
 	INCLUDE		"LightSpeedPlayer.s"
 	INCLUDE		"c2p.s"
-	INCLUDE		"sin.i"
+	INCLUDE		"sin.i"	; sine
+	ds.w		64		; cosine extension
 
 ; ----------- Local data which can be (pc) referenced
 sl:											; state_local
 tick_cnt:				dc.w	0			; current tick
 beat:					dc.w	0			; current beat (absolute nr from 0=first at pos00 note 00, increases every MUS_TPB)
-beat_strobe				dc.w	0			; beat strobe, lit for 1 frame at the start of the beat with the nr of the beat
+beat_strobe:			dc.w	0			; beat strobe, lit for 1 frame at the start of the beat with the nr of the beat
 beat_next:				dc.w	MUS_TPB		; next beat in ticks
-music_lastpos			dc.w	0			; last position
-music_finished:			dc.w	0			; first byte non-zero: music finished and stopped playing
+beat_relative:			dc.w	0			; relative beat counter which can be reset and keeps counting up every beat
+music_ticks_left:		dc.w	0			; fill in after initialising music - indicates how many ticks to play
 
-mem_data_chip:			dc.l	0			; addresses of allocated memory regions
-mem_data_public:		dc.l	0
+; music_lastpos			dc.w	0			; last position
+; music_finished:			dc.b	0			; first byte non-zero: music finished and stopped playing
+
+; mem_data_chip:			dc.l	0			; addresses of allocated memory regions
+; mem_data_public:		dc.l	0
 mem_bss_chip:			dc.l	0
 mem_bss_public:			dc.l	0
 
@@ -1550,7 +1777,7 @@ base_purple_palette_4:
 						dc.w		4
 						dcb.w		4,BC_PURPLE
 lsys_golden_palette_16:
-						dc.w	BC_PURPLE,$0652,$0762,$0984,$0652,$0762,$0984,$0aa6
+						dc.w	16,BC_PURPLE,$0652,$0762,$0984,$0652,$0762,$0984,$0aa6
 						dc.w	$0541,$0642,$0752,$0974,$0642,$0752,$0974,$0dd9
 end:
     ;echo 		"Total code length: ", (end-s)
@@ -1598,7 +1825,7 @@ copper_lsys:
 		dc.w	BPLCON0, $0200, BPLCON1, LSYS_DISPLACEMENT
 		dc.w	DIWSTRT, $2C81, DIWSTOP, $2aC1
 		dc.w	DDFSTRT, $0048, DDFSTOP, $00C0
-		dc.w	BPL1MOD,0, BPL2MOD,0
+		dc.w	BPL1MOD,0, BPL2MOD,0,COLOR15,$0cc7
 copper_lsys_cols:
 ;		dc.w	COLOR00,BC_PURPLE,COLOR01,$0652,COLOR02,$0762,COLOR03,$0984,COLOR04,$0652,COLOR05,$0762,COLOR06,$0984,COLOR07,$0aa6
 ;		dc.w	COLOR08,$0541,COLOR09,$0642,COLOR10,$0752,COLOR11,$0974,COLOR12,$0642,COLOR13,$0752,COLOR14,$0974,COLOR15,$0dd9
