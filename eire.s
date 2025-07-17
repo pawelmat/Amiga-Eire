@@ -63,7 +63,7 @@ parts:
 ;		bsr		eirePart
 ;		bsr		lsystemPart
 		bsr		scrollPart
-		bsr		endPart
+;		bsr		endPart
 
 exit:
         bsr     OsRestore
@@ -402,7 +402,7 @@ lsystemPart:
 
 		bsr		logoTransformPrecalc			; prepare logo anims while the first part plays in L3
 
-		lea		lsys_finished(pc),a1
+		lea		lsys_finished(pc),a1			; wait until sequence 1 is finished. Pre-cals should safely finish in this time on an a500
 .checkFinishedPart1:
 		bsr		vBlank
 		tst		(a1)
@@ -1019,6 +1019,11 @@ scrollPart:
 		move.l	mem_bss_chip(pc),a6
 		lea		logo_trans_frames(pc),a5
 		move.l	(a5),a1										; 1st frame = Suspect logo
+	; #REMOVE
+	move.l	a1,d0
+	bne		.logOK
+	lea		logo_Suspect,a1								; in dev mode just use this logo
+.logOK:
 		lea		Logo_screen1(a6),a2
 		move.l	#LOGO_SIZE/4-1,d7
 .cpl1:	move.l	(a1)+,(a2)+
@@ -1031,6 +1036,7 @@ scrollPart:
 		bsr		setLogoAddr
 
 		bsr 	scrollInit
+		bsr		ccInit										;chunky copper
 
 		lea		copper_scroll,a2
 		move.l	a2,COP2LC(a0)
@@ -1076,6 +1082,54 @@ scrollPart:
 		moveq	#2,d0
 		bsr		transformColors
 
+		rts
+
+
+; ------------------------------------------
+; chunky copper init
+ccInit:
+		movem.l	ALL,-(sp)
+		lea		copper_cc,a1
+		moveq	#CC_Y-1,d7
+		move.l	#((CC_Y0*256+CC_X0)<<16)+$fffe,d0
+		move.l	#(COLOR00<<16)+0,d1
+		move.l	#(COLOR00<<16)+BC_PURPLE,d2
+
+;		move.l	#(DMACON<<16)+(DMAF_SETCLR|DMAF_BPLEN),d3
+;		move.l	#(DMACON<<16)+(DMAF_BPLEN),d4
+		; move.l	#(BPLCON0<<16)+$1200,d3
+		; move.l	#(BPLCON0<<16)+$0200,d4
+.ccY:
+		move.l	d0,(a1)+
+;		move.l	d3,(a1)+
+		moveq	#CC_X-1,d6
+.ccX1:	move.l	d1,(a1)+
+	addi.l	#8,d1
+		dbf		d6,.ccX1
+		move.l	d2,(a1)+
+;		move.l	d4,(a1)+
+
+		addi.l	#$2000000,d0
+		move.l	d0,(a1)+
+;		move.l	d3,(a1)+
+		moveq	#CC_X-1,d6
+.ccX2:	move.l	d1,(a1)+
+	addi.l	#8,d1
+		dbf		d6,.ccX2
+		move.l	d2,(a1)+
+;		move.l	d4,(a1)+
+
+		addi.l	#$2000000,d0
+		dbf		d7,.ccY
+
+		lea		copper_cc_bpls,a1
+		lea		cc_mask,a2				; setup mask bitplane
+		move.l	a2,d0
+		move	d0,6(a1)
+		swap	d0
+		move	d0,2(a1)
+
+		movem.l	(sp)+,ALL
 		rts
 
 ; ------------------------------------------
@@ -1246,7 +1300,13 @@ blendLogos:
 		add		d0,d0
 
 		move.l	(a5,d0.w),a1					; frame addr
-		lea		(a1,d7.w),a1
+	; #REMOVE
+	move.l	a1,d1
+	bne		.logOK
+	lea		logo_Suspect,a1								; in dev mode just use this logo
+.logOK:
+
+		lea		(a1,d7.w),a1					; word in frame addr
 		move.l	a1,d1
 		lea		Logo_screen1(a6,d7.w),a2
 		move.l	a2,d2
@@ -1689,6 +1749,7 @@ endPart:
 		add		d0,d2
 		move.b	d1,1(a1)						; start and end pos
 		move.b	d2,9(a1)
+		subi	#$111,6(a1)						; color
 		subi	#10,d0
 		bpl		.shrink2
 		bsr		vBlank
@@ -1857,13 +1918,40 @@ copper_scroll_logo_bpls:
 ;		dc.w	$338f,$fffe, COLOR00, BC_PURPLE, COLOR00, $424, COLOR00, $535, COLOR00, $424, COLOR00, BC_PURPLE
 ;		dc.w	$348f,$fffe, COLOR00, BC_PURPLE, COLOR00, BC_PURPLE, COLOR00, $424, COLOR00, BC_PURPLE
 		dc.w	$7001,$fffe, BPLCON0, $0200
-		dc.w	$ffdf,$fffe
+CC_Y0 = $78
+CC_Y = 32
+CC_X0 = $53
+CC_X = 30
+copper_cc_bpls:
+		dc.w	BPL1PTH,0,BPL1PTL,0
+		dc.w	BPL1MOD,-(CC_X)
+		dc.w	COLOR01, BC_PURPLE
+;		dc.w	DIWSTRT, $2C81, DIWSTOP, $1EC1
+		dc.w	DDFSTRT, $0048, DDFSTOP, $00B8, BPLCON1, $0077
 
+		dc.w	$7701,$fffe, BPLCON0, $1200
+
+copper_cc:		ds.l	(CC_X+2)*(CC_Y*2)
+		; dc.w	$7853,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff
+		; 			dc.w	COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff, COLOR00, BC_PURPLE
+		; dc.w	$7953,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff
+		; 			dc.w	COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff, COLOR00, BC_PURPLE
+		; dc.w	$7c53,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff
+		; 			dc.w	COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff, COLOR00, BC_PURPLE
+		; dc.w	$7d53,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff
+		; 			dc.w	COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff, COLOR00, BC_PURPLE
+		; dc.w	$f84f,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, BC_PURPLE
+
+copper_cc_end:
+		dc.w	$f701,$fffe, BPLCON0, $0200
+
+		dc.w	$ffdf,$fffe
 		dc.w	$0001,$fffe
 		dc.w	BPL1MOD,2*SCROLL_LEN-40
 		dc.w	BPL2MOD,2*SCROLL_LEN-40
 		dc.w	DIWSTRT, $2C91, DIWSTOP, $1EB1
-		dc.w	COLOR01,$0b9b,COLOR02,$0444,COLOR03,$0cac
+		dc.w	DDFSTRT, $0038, DDFSTOP, $00D0
+	dc.w	COLOR01,$0b9b,COLOR02,$0444,COLOR03,$0cac
 copper_scroll_shift:
 		dc.w	BPLCON1, $0000
 copper_scroll_bpls:
@@ -1931,6 +2019,8 @@ EIRE_SIZE_X = 128
 EIRE_SIZE_Y = 96
 EIRE_COLS = 16
 EIRE_BPL = 4
+cc_mask:
+	dc.w	$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0
 
 ; ------------------------- DATA PUBLIC section ---------------------------------
 	data
@@ -1950,7 +2040,6 @@ scroll_text:
 	dc.b		0
 	EVEN
 scroll_text_end:
-S
 	EVEN
 
 ; ------------------------- BSS CHIP section ---------------------------------

@@ -120,7 +120,8 @@
             "type": "shell",
             "label": "amigaassembly: shrink",
             "command" : "tools/shrinkler",
-            "args": ["-2","-f","DFF1A2","-t","\\\"Eire by Suspect and Scoopex\nBOOM! Party 2025 40k A500 OCS Release\n\nProcessing... patience is a virtue!\\\"","${workspaceFolder}/uae/dh0/eire","${workspaceFolder}/uae/dh0/eire.exe"],
+            "args": ["-2","-f","DFF182","-t","\\\"Eire by Suspect and Scoopex\nBOOM! Party 2025 40k A500 OCS Release\n\nProcessing... patience is a virtue!\\\"","${workspaceFolder}/uae/dh0/eire","${workspaceFolder}/uae/dh0/eire.exe"],
+//            "args": ["-2","-f","DFF1A2","-t","\\\"Eire by Suspect and Scoopex\nBOOM! Party 2025 40k A500 OCS Release\n\nProcessing... patience is a virtue!\\\"","${workspaceFolder}/uae/dh0/eire","${workspaceFolder}/uae/dh0/eire.exe"],
 			"group": {
 				"kind": "build",
 				"isDefault": true
