@@ -42,8 +42,8 @@ s:
 		lea		mbc,a1
 		move.l	a1,(a2)
 
-		; moveq	#20,d0
-		; bsr		setMusicPos
+	; moveq	#22,d0
+	; bsr		setMusicPos
 
 		lea		copper_base,a2
 		move.l	a2,COP1LC(a0)
@@ -53,17 +53,17 @@ s:
 		move	#INTF_SETCLR|INTF_INTEN|INTF_VERTB|INTF_COPER,INTENA(a0)		; enable selected interrupts
 		move	#DMAF_SETCLR|DMAF_DMAEN|DMAF_BPLEN|DMAF_COPEN|DMAF_BLTEN,DMACON(a0)
 
-		lea		sinus_14b_256(pc),a1
+		lea		sine_14b_256(pc),a1
 		moveq	#63,d7
 .mkCos:	move	(a1)+,256*2-2(a1)					; make extend sine to cosine 
 		dbf		d7,.mkCos
 
 parts:
-;		bsr		swipeScreenAtStart
 ;		bsr		eirePart
+;		bsr		swipeScreenPart
 ;		bsr		lsystemPart
 		bsr		scrollPart
-;		bsr		endPart
+		bsr		endPart
 
 exit:
         bsr     OsRestore
@@ -236,19 +236,30 @@ resetRelativeBeat:
 		rts
 
 vBlank:
-		VBLANK
+		VBLANKS
 		rts
 
+vWait:			; d0 - frames
+		cmp.b     #$ff,6(a0)
+		bne.s     *-6
+		cmp.b     #$ff,6(a0)
+		beq.s     *-6
+		dbf       d0,vWait
+		rts
 ;-----------------------------------------------------------------------
 ;-----------------------------------------------------------------------
 ; 2-stage screen transition (left right and then centre->up/down) at the start
 START_COPPER_LINES = 272
-swipeScreenAtStart:
+swipeScreenPart:
+		lea		CUSTOM,a0
+		bsr		vBlank
+
 		move.l	mem_bss_chip(pc),a1
 		lea		Copper_start_swipe(a1),a2
 		lea		Copper_start_wait_addr(a1),a3
 		lea		(a2),a5
-		move.l	#$2039fffe,d0
+		; move.l	#$2039fffe,d0
+		move.l	#$2001fffe,d0
 		move.l	#(COLOR00<<16),d1
 		move.l	#$208ffffe,d2
 		move.l	#(COLOR00<<16),d3
@@ -272,12 +283,11 @@ swipeScreenAtStart:
 		dbf		d7,.buildCopper
 		move.l	#-2,(a2)	
 
-		lea		CUSTOM,a0
-		WAIT	30
+		bsr		vBlank
 		move.l	a5,COP2LC(a0)
 
-		move	#22-1,d7
-		move	#$8f-(21*4),d0
+		move	#72-1,d7
+		move	#$8f-(71*2),d0
 .pass1:	move	#(START_COPPER_LINES)-1,d6				; left->right
 		lea		Copper_start_wait_addr(a1),a3
 .l1:	move.l	(a3)+,a5
@@ -285,13 +295,13 @@ swipeScreenAtStart:
 		move.b	d0,9(a5)
 		dbf		d6,.l1
 		VBLANKNL 310
-		addq	#4,d0
+		addq	#2,d0
 		dbf		d7,.pass1
 
-		move	#23-1,d7
+		move	#23*2-1,d7
 		lea		Copper_start_wait_addr+(((START_COPPER_LINES/2))*4)(a1),a3
 		lea		(a3),a4
-.pass2:	moveq	#5,d6									; middle -> up/down
+.pass2:	moveq	#3-1,d6									; middle -> up/down
 .l2:	move.l	-(a3),a5
 		move	#$313,14(a5)
 		move.l	(a4)+,a5
@@ -299,6 +309,12 @@ swipeScreenAtStart:
 		dbf		d6,.l2
 		VBLANKNL 310
 		dbf		d7,.pass2
+
+		lea		CUSTOM,a0
+		lea		copper_blank_purple,a1
+		move.l	a1,COP2LC(a0)
+		move	#20,d0
+		bsr		vWait
 		rts
 
 ;-----------------------------------------------------------------------
@@ -320,7 +336,8 @@ eirePart:
 		moveq	#2,d0
 		bsr		fadeColorsIn
 
-		TESTLMB
+;		TESTLMB
+		WAIT	200
 
 		bsr		fadeColorsOut
 
@@ -372,7 +389,7 @@ lsystemPart:
 		bsr		vBlank
 
 		lea		lsys_p1(pc),a1
-		move.l	mem_bss_public(pc),a5
+		move.l	mem_bss_public(pc),a3
 		adda.l	#LS_recursion_tab1,a3
 		bsr		lsysCreateIterations
 
@@ -755,7 +772,7 @@ lsysRotateBobs:
 		move	(a5),d7
 		andi	#510,d7
 		move	4(a5),d6							; zoom (15 bits, 0=none)
-		lea		sinus_14b_256+32*2(pc),a5
+		lea		sine_14b_256+32*2(pc),a5
 .drawLoop:
 		move	(a4)+,d0
 		bmi		.finished
@@ -1014,7 +1031,8 @@ scrollPart:
 		lea		copper_blank_purple,a1
 		move.l	a1,COP2LC(a0)
 		bsr		vBlank
-;		bsr		logoTransformPrecalc						; prepare logo anims - this is done in the previous part
+	; #REMOVE
+	; bsr		logoTransformPrecalc						; prepare logo anims - this is done in the previous part
 
 		move.l	mem_bss_chip(pc),a6
 		lea		logo_trans_frames(pc),a5
@@ -1037,6 +1055,7 @@ scrollPart:
 
 		bsr 	scrollInit
 		bsr		ccInit										;chunky copper
+		bsr		ccSineTabsInit
 
 		lea		copper_scroll,a2
 		move.l	a2,COP2LC(a0)
@@ -1050,18 +1069,14 @@ scrollPart:
 
 		moveq	#1,d0
 		bsr		syncToStrobe				; sync next action to strobe (music beat)
+		bsr		resetRelativeBeat
 		lea		scrollMove(pc),a1			; scroll move procedure to be called from the L3 int
 		bsr		intL3ProcSet
 
 ; Main scroll loop
 .mainLoopScroll:
-		VBLANK
-
-		lea		logo_trans_delay(pc),a1
-		subi	#1,(a1)
-		bne.s	.noBlend
-		bsr		blendLogos
-.noBlend:
+		bsr		vBlank
+		bsr		ccSequencePlay
 
 		lea		sl(pc),a1					; if music finished then finish part
 		tst		music_ticks_left-sl(a1)
@@ -1071,6 +1086,7 @@ scrollPart:
         bne	    .mainLoopScroll
 
 .exit:
+		bsr		vBlank
 		bsr		intL3ProcClear				; remove L3 int proc
 		lea		blitter_queue(pc),a1		; make sure blitter queue is empty
 		BLITTERWAITQUEUE
@@ -1084,42 +1100,460 @@ scrollPart:
 
 		rts
 
+; ------------------------------------------
+;CC_START_BEAT = 8
+CC_START_BEAT = 2
+ccSequencePlay:
+		lea		cc_parts_state(pc),a6				; init etc. state
+		move	beat_relative(pc),d0
+		subi	#LSYS_START_BEAT,d0
+		bpl		.part1b
+		bsr		ccCoreP1
+		bsr		ccCanvasOpen1a
+		bra		.exit
+.part1b:
+		subi	#1,d0
+		bpl		.part2
+		bsr		ccCoreP1
+		bsr		ccCanvasClose1a
+		bra		.exit
+;-------
+.part2:
+	bra .part3
+		subi	#16,d0
+		bpl		.part2b
+		lea		ccSinCols2(pc),a1
+		addi	#2,2(a1)
+		subi	#4,6(a1)
+		bsr		ccMakeSinMap
+
+		bsr		ccCoreP2
+		bsr		ccCanvasOpen1a
+		bra		.exit
+.part2b:
+		subi	#1,d0
+		bpl		.part3
+		bsr		ccCoreP2
+		bsr		ccCanvasClose1a
+		bra		.exit
+;-------
+.part3:
+		subi	#16,d0
+		bpl		.part3b
+		tst.b	(a6)
+		bne		.p2a
+		st		(a6)
+		lea		ccSinCols3(pc),a1
+		bsr		ccMakeSinMap
+		bra		.exit
+.p2a:
+		bsr		ccCoreP3
+		bsr		ccCanvasOpen1a
+		bra		.exit
+.part3b:
+		subi	#2,d0
+		bpl		.part4
+		; tst.b	3(a6)
+		; bne		.p3b
+		; st		3(a6)
+		; lea		cc_open_cnt(pc),a1
+		; move	#3,2(a1)
+.p3b:	bsr		ccCoreP3
+		bsr		ccCanvasClose1a
+		bra		.exit
+;-------
+.part4:
+
+
+		nop
+.exit:
+		rts
+
+ccCoreP1:
+		lea		ccP1_1(pc),a1
+CCP1a:	bsr		ccPlasm01
+	move #$000,COLOR00(a0)
+		bsr		blendLogos
+		rts
+
+ccCoreP2:
+		lea		ccP1_2(pc),a1
+		bra		CCP1a
+
+ccCoreP3:
+		lea		ccP2_1(pc),a1
+CCP3a:	bsr		ccPlasm02
+	move #$000,COLOR00(a0)
+		bsr		blendLogos
+		rts
+
+cc_parts_state:		dc.b	0,0
+	EVEN
+
+
+; ------------------------------------------
+CC_Y = 32
+CC_X = 30
+
+CC_SIN_256 = 0
+CC_SIN_A = 256*2
+CC_SIN_B = CC_SIN_A+256*2
+CC_SIN_CR = CC_SIN_B+256*2
+CC_SIN_CG = CC_SIN_CR+256*2
+CC_SIN_CB = CC_SIN_CG+256*2
+CC_SIN_MAP = CC_SIN_CB+256*2
+; ------------------------------------------
+; a1 - control struct
+ccPlasm01:
+		movem.l	d0-d7/a1-a6,-(sp)
+		move.l	a1,a2
+		move	(a2)+,d7
+.adv1:	move	(a2)+,d0
+		add		d0,(a2)+				; advance all sines
+		dbf		d7,.adv1
+
+		move.l	mem_bss_public(pc),a3
+		adda.l	#CC_sin256,a3
+		lea		CC_SIN_A(a3),a4
+		lea		CC_SIN_MAP(a3),a6
+
+		move	#510,d2
+
+		move	4(a1),d4
+		and		d2,d4
+		move	(a3,d4.w),d0
+		move	8(a1),d4
+		and		d2,d4
+		add		(a4,d4.w),d0			; starting value
+
+		lea		copper_cc+16,a2			; colors start, skip first 4 copper instructions
+		move.l	#(COLOR01<<16),d5
+		moveq	#CC_Y*2,d7
+
+		move	18(a1),d3				; X add
+		move	12(a1),d4				; y start 1
+		move	16(a1),a5				; y start 2
+.loopY:
+		move	d4,d5
+		add		d7,d5
+		and		d2,d5
+		move	(a4,d5.w),d1
+		add		d0,d1
+
+		move	a5,d5
+		add		d7,d5
+		and		d2,d5
+		add		(a3,d5.w),d1
+		lsl		d1						; color index in words
+
+		moveq	#CC_X-1,d6
+		; moveq	#1,d6
+		; moveq	#CC_X/2-1,d6
+.loopX:
+		; REPT	2
+		and		d2,d1
+		move	(a6,d1.w),d5			; color map
+		add		d3,d1
+		move.l	d5,(a2)+				; COLOR00 + color
+		move.l	d5,(CC_ROWLEN*4)-4(a2)
+		move.l	d5,2*(CC_ROWLEN*4)-4(a2)
+		move.l	d5,3*(CC_ROWLEN*4)-4(a2)
+		; ENDR
+		dbf		d6,.loopX
+
+		lea		8+16+4*CC_ROWLEN*(CC_Y_REPS-1)(a2),a2				; skip last col + bpl off, and start of next row
+		subq	#2,d7
+		bne		.loopY
+
+		movem.l	(sp)+,d0-d7/a1-a6
+		rts
+
+ccP1_1:	dc.w	3, -3,20, 1,50, 2,0, -1,0, 5			; or of tuples, (spd,cnt) tuples, X add
+ccP1_2:	dc.w	3, 2,40, -2,50, -3,0, 2,0, 8
+
+; ------------------------------------------
+; a1 - control struct
+ccPlasm02:
+		movem.l	d0-d7/a1-a6,-(sp)
+		move.l	a1,a2
+		move	(a2)+,d7
+.adv1:	move	(a2)+,d0
+		add		d0,(a2)+				; advance all sines
+		dbf		d7,.adv1
+
+		move.l	mem_bss_public(pc),a3
+		adda.l	#CC_sin256,a3
+		lea		CC_SIN_A(a3),a4
+		lea		CC_SIN_MAP(a3),a6
+
+		move	#510,d2
+
+		move	4(a1),d4
+		and		d2,d4
+		move	(a3,d4.w),d0
+		move	8(a1),d4
+		and		d2,d4
+		add		(a4,d4.w),d0			; starting value1 d0
+
+		move	16+4(a1),d4
+		and		d2,d4
+		move	(a3,d4.w),d3
+		move	16+8(a1),d4
+		and		d2,d4
+		add		(a4,d4.w),d3			; starting value2 d3
+
+
+		lea		CC_SIN_B(a3),a3
+
+		lea		copper_cc+16,a2			; colors start, skip first 4 copper instructions
+		move.l	#(COLOR01<<16),d5
+		moveq	#CC_Y*2,d7
+
+		; move	18(a1),d3				; X add
+		; move	12(a1),d4				; y start 1
+		move	16+16+2(a1),a5				; y start 2
+.loopY:
+		move	12(a1),d5
+		add		d7,d5
+		and		d2,d5
+		move	(a4,d5.w),d1			; sin A
+		add		d0,d1
+
+		move	16(a1),d5
+		add		d7,d5
+		and		d2,d5
+		add		(a3,d5.w),d1			; sin B
+		lsl		d1						; color index in words
+
+		move	16+12(a1),d5
+		add		d7,d5
+		and		d2,d5
+		move	(a4,d5.w),d4			; sin A
+		add		d3,d4
+
+		move	16+16(a1),d5
+		add		d7,d5
+		and		d2,d5
+		add		(a3,d5.w),d4			; sin B
+		lsl		d4						; color index in words
+
+		moveq	#CC_X-1,d6
+.loopX:
+		and		d2,d1
+		move	(a6,d1.w),d5			; color map
+		add		a5,d1
+		and		d2,d4
+		add		(a6,d4.w),d5			; color map
+		add		16+16+4(a1),d4
+
+		move.l	d5,(a2)+				; COLOR00 + color
+		move.l	d5,(CC_ROWLEN*4)-4(a2)
+		move.l	d5,2*(CC_ROWLEN*4)-4(a2)
+		move.l	d5,3*(CC_ROWLEN*4)-4(a2)
+		dbf		d6,.loopX
+
+		lea		8+16+4*CC_ROWLEN*(CC_Y_REPS-1)(a2),a2				; skip last col + bpl off, and start of next row
+		subq	#2,d7
+		bne		.loopY
+
+
+		movem.l	(sp)+,d0-d7/a1-a6
+		rts
+
+ccP2_1:	dc.w	7, 	2,0, 4,80, 4,170*2, 2,40						; or of tuples, (spd,cnt) tuples, X adds
+		dc.w		-4,160, -2,140, 2,0, 6,46, 4,3 
+
+; ------------------------------------------
+; a1 - sin col tab
+ccMakeSinMap:
+		movem.l	d0-d7/a2-a6,-(sp)
+		move.l	mem_bss_public(pc),a2
+		move.l	a2,a3
+		move.l	a2,a4
+		move.l	a2,a5
+		adda.l	#CC_sinCR,a2
+		adda.l	#CC_sinCG,a3
+		adda.l	#CC_sinCB,a4
+		adda.l	#CC_sinMap,a5
+		move	2(a1),d0				; starting positions
+		move	6(a1),d1
+		move	10(a1),d2
+		move	(a1),a6					; speeds
+		move	4(a1),d4
+		move	8(a1),d5
+		move	#510,d6
+		move	#255,d7
+.sl:	and		d6,d0
+		move	(a2,d0.w),d3
+		and		d6,d1
+		or		(a3,d1.w),d3
+		and		d6,d2
+		or		(a4,d2.w),d3
+		add		a6,d0
+		add		d4,d1
+		add		d5,d2
+		move	d3,(a5)+
+		dbf		d7,.sl
+		movem.l	(sp)+,d0-d7/a2-a6
+
+		rts
+
+ccSinCols1:	dc.w	-4,0, 0,128*3, 6,0
+ccSinCols2:	dc.w	6,50, 2,50, -4,10
+ccSinCols3:	dc.w	2,0, 2,0, 2,0
+
+; ------------------------------------------
+; d0.w - main pattern
+; Out: Z - finished
+ccCanvasOpen1a:
+		move	#$cccc,d0
+ccCanvasOpen1:
+		movem.l	d0-d3/a1-a2,-(sp)
+		lea		cc_open_cnt(pc),a1
+		subi	#1,2(a1)					; move only every n frames
+		bne		.exit
+		move	#3,2(a1)
+		move	#$4444,d1
+		lea		cc_mask+7*2,a2
+		move	(a1),d2
+		bne.s	.cc1
+		move	d1,(a2)
+		bra		.cc2
+.cc1:	cmpi	#14,d2
+		beq		.exit						; Z set - finished
+		move	d2,d3
+		subq	#2,d3
+		move	d0,(a2,d3.w)
+		neg		d3
+		move	d0,(a2,d3.w)
+		move	d1,(a2,d2.w)
+		neg		d2
+		move	d1,(a2,d2.w)
+		neg		d2
+.cc2:	addq	#2,d2
+		move	d2,(a1)
+		moveq	#1,d0
+.exit:
+		movem.l	(sp)+,d0-d3/a1-a2
+		rts
+
+ccCanvasClose1a:
+		move	#$cccc,d0
+ccCanvasClose1:
+		movem.l	d0-d3/a1-a2,-(sp)
+		lea		cc_open_cnt(pc),a1
+		subi	#1,2(a1)					; move only every n frames
+		bne		.exit
+		move	#3,2(a1)
+		move	#$4444,d1
+		lea		cc_mask+7*2,a2
+		move	(a1),d2
+		beq		.exit						; Z set - finished
+		cmpi	#2,d2
+		bne		.cc1
+		move	#0,(a2)
+		bra		.cc2
+.cc1:	move	d2,d3
+		subq	#2,d3
+		move	#0,(a2,d3.w)
+		neg		d3
+		move	#0,(a2,d3.w)
+		neg		d3
+		subq	#2,d3
+		move	d1,(a2,d3.w)
+		neg		d3
+		move	d1,(a2,d3.w)
+.cc2:	subq	#2,d2
+		move	d2,(a1)
+		moveq	#1,d0
+.exit:
+		movem.l	(sp)+,d0-d3/a1-a2
+		rts
+
+cc_open_cnt:	dc.w	0,3
+
+; ------------------------------------------
+; create sine tabs for plasmas
+ccSineTabsInit:
+		move.l	mem_bss_public(pc),a1
+		adda.l	#CC_sin256,a1
+		move	#128,d0
+		move	d0,d1
+		bsr		ccSineCreate
+		move.l	mem_bss_public(pc),a1
+		adda.l	#CC_sinA,a1
+		move	#100,d0
+		move	d0,d1
+		bsr		ccSineCreate
+		move.l	mem_bss_public(pc),a1
+		adda.l	#CC_sinB,a1
+		move	#40,d0
+		move	d0,d1
+		bsr		ccSineCreate
+
+		move.l	mem_bss_public(pc),a1
+		adda.l	#CC_sinCB,a1				; blue only
+		move	#8,d0
+		move	d0,d1
+		bsr		ccSineCreate
+
+		move.l	mem_bss_public(pc),a1
+		move.l	a1,a2
+		adda.l	#CC_sinCG,a1				; green and red
+		adda.l	#CC_sinCR,a2
+		move	#255,d7
+.sl:	move	(a3)+,d0
+		asl		#4,d0
+		move	d0,(a1)+
+		asl		#4,d0
+		move	d0,(a2)+
+		dbf		d7,.sl
+
+		lea		ccSinCols1(pc),a1
+		bsr		ccMakeSinMap
+
+		rts
+
+; a1: target sine (256w), d0: amplitude, d1 - centre
+ccSineCreate:
+		move.l	a1,a3
+		lea		sine_14b_256(pc),a2
+		asl		#2,d0
+		move	#255,d7
+.sl:	move	(a2)+,d3
+		muls	d0,d3
+		swap	d3
+		add		d1,d3
+		move	d3,(a1)+
+		dbf		d7,.sl
+		move	126(a3),128(a3)				; fix one out of range value
+		rts
 
 ; ------------------------------------------
 ; chunky copper init
 ccInit:
 		movem.l	ALL,-(sp)
 		lea		copper_cc,a1
-		moveq	#CC_Y-1,d7
 		move.l	#((CC_Y0*256+CC_X0)<<16)+$fffe,d0
-		move.l	#(COLOR00<<16)+0,d1
-		move.l	#(COLOR00<<16)+BC_PURPLE,d2
-
-;		move.l	#(DMACON<<16)+(DMAF_SETCLR|DMAF_BPLEN),d3
-;		move.l	#(DMACON<<16)+(DMAF_BPLEN),d4
+		move.l	#$1000000,d1
+		move.l	#(COLOR01<<16)+BC_PURPLE,d2
+		move.l	#((CC_Y0*256+1)<<16)+$fffe,d5
 		; move.l	#(BPLCON0<<16)+$1200,d3
 		; move.l	#(BPLCON0<<16)+$0200,d4
-.ccY:
-		move.l	d0,(a1)+
-;		move.l	d3,(a1)+
-		moveq	#CC_X-1,d6
-.ccX1:	move.l	d1,(a1)+
-	addi.l	#8,d1
-		dbf		d6,.ccX1
-		move.l	d2,(a1)+
-;		move.l	d4,(a1)+
-
-		addi.l	#$2000000,d0
-		move.l	d0,(a1)+
-;		move.l	d3,(a1)+
-		moveq	#CC_X-1,d6
-.ccX2:	move.l	d1,(a1)+
-	addi.l	#8,d1
-		dbf		d6,.ccX2
-		move.l	d2,(a1)+
-;		move.l	d4,(a1)+
-
-		addi.l	#$2000000,d0
+		move.l	#(COLOR03<<16)+BC_PURPLE,d3
+		move.l	#(COLOR03<<16)+BC_PURPLE,d4
+		move.l	#(BPLCON1<<16)+$0088,a3
+		move.l	#(BPLCON1<<16)+$00AA,a4
+		moveq	#CC_Y-1,d7
+.ccY:	
+		move.l	a3,a2
+		bsr		.rowInit
+		move.l	a4,a2
+		bsr		.rowInit
+		move.l	a3,a2
+		bsr		.rowInit
+		move.l	a4,a2
+		bsr		.rowInit
 		dbf		d7,.ccY
 
 		lea		copper_cc_bpls,a1
@@ -1130,6 +1564,22 @@ ccInit:
 		move	d0,2(a1)
 
 		movem.l	(sp)+,ALL
+		rts
+
+.rowInit:
+		move.l	d5,(a1)+				; wait row start
+		move.l	d3,(a1)+				; bpl on
+		move.l	a2,(a1)+				; shift
+		move.l	d0,(a1)+				; wait row X
+		; moveq	#CC_X-1,d6
+		moveq	#CC_X,d6
+.ccX1:	
+		; move.l	d1,(a1)+				; col+val
+		move.l	d2,(a1)+				; col+val
+		dbf		d6,.ccX1
+		move.l	d4,(a1)+				; bpl off
+		add.l	d1,d0					; move to next row
+		add.l 	d1,d5
 		rts
 
 ; ------------------------------------------
@@ -1166,9 +1616,6 @@ scrollMove:
 .smExit:
 ;		movem.l	(sp)+,a1/d0
 		rts
-
-scroll_sin:		dc.b	MUS_TPB*2,1,2,3,4,5,6,7,8,9,10,11,12,12,13,14,14,15,15,16,16,16,17,17,17,17,17,17,17,16,16,16,15,15,14,14,13,12,12,11,10,9,8,7,6,5,4,3,2
-		EVEN
 
 ; ------------------------------------------
 ; init scroll 8x12
@@ -1207,12 +1654,13 @@ fontPrep_8_12:
 		moveq	#0,d0
 		moveq	#SCROLL_CHARS-1,d7					; nr of fonts
 .fntPrep:											; align fonts with all words of each letter next to each other
-		.FOFS:	SET 0
-		REPT	SCROLL_Y
-		move.b	.FOFS(a4),(a5)+
-		move.b	.FOFS+SCROLL_CHARS(a4),(a5)+
-		.FOFS:	SET .FOFS+2*SCROLL_CHARS
-		ENDR
+		moveq	#SCROLL_Y-1,d6
+		move.l	a4,a1
+.fp1:	move.b	(a1),(a5)+
+		move.b	SCROLL_CHARS(a1),(a5)+
+		lea		2*SCROLL_CHARS(a1),a1
+		dbf		d6,.fp1
+
 		lea		32-2*SCROLL_Y(a5),a5				; skip not used lines up to 32
 		lea		1(a4),a4
 		dbf		d7,.fntPrep
@@ -1244,6 +1692,11 @@ printText_8_12:
 ; ------------------------------------------
 ; Blend logos step
 blendLogos:
+		movem.l	ALL,-(sp)
+		lea		logo_trans_delay(pc),a1
+		subi	#1,(a1)
+		bne		.exit
+
 		lea		CUSTOM,a0
 		move.l	mem_bss_chip(pc),a6
 		lea		logo_trans_frames(pc),a5
@@ -1275,7 +1728,6 @@ blendLogos:
 		lea		logo_trans_delay(pc),a1
 		move	(a3)+,(a1)					; speed
 
-;	move #$0f0,COLOR00(a0)
 		lea		logo_trans_speed(pc),a4
 		moveq	#0,d7						; X size in words *2
 .blIterate:
@@ -1361,9 +1813,8 @@ blendLogos:
 		bne		.blIterate
 
 		bsr		blitterQueueStart			; kick off blitter queue
-
-.qEmpty
-;	move #$000,COLOR00(a0)
+.exit:
+		movem.l	(sp)+,ALL
 		rts
 
 ; ------------------------------------------
@@ -1409,15 +1860,16 @@ logoTransformPrecalc:
 
 		moveq	#1,d6								; interpolate colors for this scaling factor
 		moveq	#0,d1
-		move.l	#LOGO_SIZE_X*LOGO_SIZE_Y/4-1,d6
+		; move.l	#LOGO_SIZE_X*LOGO_SIZE_Y/4-1,d6
+		move.l	#LOGO_SIZE_X*LOGO_SIZE_Y-1,d6
 .colInterp:
-		rept	4
+		; rept	4
 		move.b	(a1)+,d0							; suspect logo texel
 		move.b	(a2)+,d1							; scoopex logo texel
 		sub.b	d0,d1
 		add.b	(a4,d1.w),d0
 		move.b	d0,(a3)+
-		endr
+		; endr
 		dbf		d6,.colInterp
 
 		move.l	mem_bss_public(pc),a0
@@ -1789,16 +2241,6 @@ endPart:
 	ds.w		64		; cosine extension
 
 ; ----------- Local data which can be (pc) referenced
-sl:											; state_local
-tick_cnt:				dc.w	0			; current tick
-beat:					dc.w	0			; current beat (absolute nr from 0=first at pos00 note 00, increases every MUS_TPB)
-beat_strobe:			dc.w	0			; beat strobe, lit for 1 frame at the start of the beat with the nr of the beat
-beat_next:				dc.w	MUS_TPB		; next beat in ticks
-beat_relative:			dc.w	0			; relative beat counter which can be reset and keeps counting up every beat
-music_ticks_left:		dc.w	0			; fill in after initialising music - indicates how many ticks to play
-
-; music_lastpos			dc.w	0			; last position
-; music_finished:			dc.b	0			; first byte non-zero: music finished and stopped playing
 
 ; mem_data_chip:			dc.l	0			; addresses of allocated memory regions
 ; mem_data_public:		dc.l	0
@@ -1806,6 +2248,18 @@ mem_bss_chip:			dc.l	0
 mem_bss_public:			dc.l	0
 
 logo_trans_frames:		dcb.l	LOGO_TRANS_NR,0		; transition frame pointers
+
+BLT_Q_MAX = 200
+blitter_queue:			dc.w	0						; offset in queue
+						dcb.l	BLT_Q_MAX,0
+
+sl:											; state_local
+tick_cnt:				dc.w	0			; current tick
+beat:					dc.w	0			; current beat (absolute nr from 0=first at pos00 note 00, increases every MUS_TPB)
+beat_strobe:			dc.w	0			; beat strobe, lit for 1 frame at the start of the beat with the nr of the beat
+beat_relative:			dc.w	0			; relative beat counter which can be reset and keeps counting up every beat
+music_ticks_left:		dc.w	0			; fill in after initialising music - indicates how many ticks to play
+beat_next:				dc.w	MUS_TPB		; next beat in ticks
 
 BL_RANGE = 3*MUS_TPB
 TRANS_SCHED_MAX = 5
@@ -1818,9 +2272,9 @@ logo_trans_schedule:	dc.w	3, 19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0		
 						dc.w	3, 0,2,4,6,8,10,11,12,13,13,13,13,12,11,10,8,6,4,2,0
 logo_trans_speed:		dc.w	1,1,1,1,1, 1,1,1,1,1, 1,1,1,1,1, 1,1,1,1,1
 
-BLT_Q_MAX = 200
-blitter_queue:			dc.w	0						; offset in queue
-						dcb.l	BLT_Q_MAX,0
+
+scroll_sin:		dc.b	MUS_TPB*2,1,2,3,4,5,6,7,8,9,10,11,12,12,13,14,14,15,15,16,16,16,17,17,17,17,17,17,17,16,16,16,15,15,14,14,13,12,12,11,10,9,8,7,6,5,4,3,2
+						EVEN
 
 logo_suspect_palette:
 						dc.w		LOGO_COLS		; nr of colours
@@ -1913,35 +2367,22 @@ copper_scroll_logo_cols:
 copper_scroll_logo_bpls:
 		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0,BPL3PTH,0,BPL3PTL,0,BPL4PTH,0,BPL4PTL,0
 		dc.w	$3001,$fffe, BPLCON0, $4200
-;		dc.w	$318f,$fffe, COLOR00, $424, COLOR00, $535, COLOR00, $646, COLOR00, $535, COLOR00, $424, COLOR00, BC_PURPLE
-;		dc.w	$328f,$fffe, COLOR00, $424, COLOR00, $535, COLOR00, $646, COLOR00, $535, COLOR00, $424, COLOR00, BC_PURPLE
-;		dc.w	$338f,$fffe, COLOR00, BC_PURPLE, COLOR00, $424, COLOR00, $535, COLOR00, $424, COLOR00, BC_PURPLE
-;		dc.w	$348f,$fffe, COLOR00, BC_PURPLE, COLOR00, BC_PURPLE, COLOR00, $424, COLOR00, BC_PURPLE
 		dc.w	$7001,$fffe, BPLCON0, $0200
+CC_Y_REPS = 4
 CC_Y0 = $78
-CC_Y = 32
 CC_X0 = $53
-CC_X = 30
+CC_ROWLEN = (CC_X+2+4)
 copper_cc_bpls:
 		dc.w	BPL1PTH,0,BPL1PTL,0
 		dc.w	BPL1MOD,-(CC_X)
 		dc.w	COLOR01, BC_PURPLE
-;		dc.w	DIWSTRT, $2C81, DIWSTOP, $1EC1
+;		dc.w	DIWSTRT, $2C51, DIWSTOP, $1EA1
 		dc.w	DDFSTRT, $0048, DDFSTOP, $00B8, BPLCON1, $0077
 
 		dc.w	$7701,$fffe, BPLCON0, $1200
-
-copper_cc:		ds.l	(CC_X+2)*(CC_Y*2)
+copper_cc:		ds.l	CC_ROWLEN*(CC_Y*CC_Y_REPS)
 		; dc.w	$7853,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff
 		; 			dc.w	COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff, COLOR00, BC_PURPLE
-		; dc.w	$7953,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff
-		; 			dc.w	COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff, COLOR00, BC_PURPLE
-		; dc.w	$7c53,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff
-		; 			dc.w	COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff, COLOR00, BC_PURPLE
-		; dc.w	$7d53,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff
-		; 			dc.w	COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff, COLOR00, BC_PURPLE
-		; dc.w	$f84f,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, BC_PURPLE
-
 copper_cc_end:
 		dc.w	$f701,$fffe, BPLCON0, $0200
 
@@ -1951,7 +2392,7 @@ copper_cc_end:
 		dc.w	BPL2MOD,2*SCROLL_LEN-40
 		dc.w	DIWSTRT, $2C91, DIWSTOP, $1EB1
 		dc.w	DDFSTRT, $0038, DDFSTOP, $00D0
-	dc.w	COLOR01,$0b9b,COLOR02,$0444,COLOR03,$0cac
+		dc.w	COLOR01,$0b9b,COLOR02,$0444,COLOR03,$0cac
 copper_scroll_shift:
 		dc.w	BPLCON1, $0000
 copper_scroll_bpls:
@@ -2019,8 +2460,12 @@ EIRE_SIZE_X = 128
 EIRE_SIZE_Y = 96
 EIRE_COLS = 16
 EIRE_BPL = 4
+	EVEN
 cc_mask:
-	dc.w	$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0,$f0f0
+	dcb.w	15,0
+	; dc.w	$444C
+	; dcb.w	13,$cccc
+	; dc.w	$C444
 
 ; ------------------------- DATA PUBLIC section ---------------------------------
 	data
@@ -2031,8 +2476,8 @@ LSP_Music:
    	INCBIN		"assets/Bartesek - Hey Simone!.lsmusic"
 	endif
 	EVEN
-font_16_15_1:
-   	INCBIN		"assets/font_16x15x1.bpl"
+; font_16_15_1:
+;    	INCBIN		"assets/font_16x15x1.bpl"
 font_8_12_4:
    	INCBIN		"assets/font_8x12x4.bpl"
 scroll_text:
@@ -2063,15 +2508,12 @@ SCROLL_CHARS = 60
 LS_Screen1 = Logo_screen1
 
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_1
-	if BSS_CHIP_2 > BSS_CHIP_ALLOC_MAX
-BSS_CHIP_ALLOC_MAX set BSS_CHIP_2
+	ifgt BSS_CHIP_2-BSS_CHIP_ALLOC_MAX
+BSS_CHIP_ALLOC_MAX set BSS_CHIP_2	
 	endif
 
-	;  echo 		"scrb: ", SCROLL_LEN*2*SCROLL_Y
-	;  echo 		"logo: ", LOGO_SIZE
-
-	; echo 		"BSS 1: ", BSS_CHIP_1
-	; echo 		"BSS 2: ", BSS_CHIP_2
+	echo 		"BSS 1: ", BSS_CHIP_1
+	echo 		"BSS 2: ", BSS_CHIP_2
 
 	ds.b		BSS_CHIP_ALLOC_MAX
 
@@ -2088,7 +2530,29 @@ mbp:
 	LS_bobs_tab1:				rs.b	LSYS_BOBS_MAX_LEN
 	LS_recursion_tab2:			rs.b	LSYS_RECTAB_MAX_LEN
 	LS_bobs_tab2:				rs.b	LSYS_BOBS_MAX_LEN
-	BSS_PUBLIC_ALLOC_MAX:		rs.w	0
+	BSS_PUBLIC_1:				rs.w	0
+
+	RSSET LS_recursion_tab1
+	CC_sin256:					rs.w	256
+	CC_sinA:					rs.w	256
+	CC_sinB:					rs.w	256
+	CC_sinCR:					rs.w	256
+	CC_sinCG:					rs.w	256
+	CC_sinCB:					rs.w	256
+	CC_sinMap:					rs.w	256
+	BSS_PUBLIC_2:				rs.w	0
+
+	; echo	"rc: ", LS_recursion_tab1
+	; echo	"bo: ", LS_bobs_tab1
+	; echo	"sA: ", CC_sinA
+	; echo	"aB: ", CC_sinC
+	echo	"p1: ", BSS_PUBLIC_1
+	echo	"p2: ", BSS_PUBLIC_2
+
+BSS_PUBLIC_ALLOC_MAX set BSS_PUBLIC_1
+	ifgt BSS_PUBLIC_2-BSS_PUBLIC_ALLOC_MAX
+BSS_PUBLIC_ALLOC_MAX set BSS_PUBLIC_2
+	endif
 
 	ds.b		BSS_PUBLIC_ALLOC_MAX
 
