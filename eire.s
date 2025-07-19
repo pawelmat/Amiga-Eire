@@ -449,7 +449,7 @@ lsysPlaySequence1:
 LSYS_START_BEAT = 9
 ;	move #$f00,COLOR00(a0)
 		move	beat_relative(pc),d0
-		cmp		#LSYS_START_BEAT,d0
+		cmpi	#LSYS_START_BEAT,d0
 		bge		.finished
 		tst		beat_strobe-parts_state(a6)
 		beq		.noS1
@@ -483,8 +483,10 @@ lsysPlaySequence2:
 
 ;	move #$f00,COLOR00(a0)
 		move	beat_relative(pc),d0
-		cmp		#LSYS_START_BEAT+8,d0
-		bge		.part3
+		; cmp		#LSYS_START_BEAT+8,d0
+		; bge		.part3
+		subi	#LSYS_START_BEAT+8,d0
+		bpl		.part3		
 		tst.b	(a6)
 ;		bne.s	.p2main
 		bne.s	.p3main
@@ -502,8 +504,9 @@ lsysPlaySequence2:
 
 ;--------
 .part3:
-		cmp		#LSYS_START_BEAT+8+8,d0
-		bge		.part4
+		subi	#8,d0
+		; cmp		#LSYS_START_BEAT+8+8,d0
+		bpl		.part4
 		tst.b	1(a6)
 		bne.s	.p3main
 		st		1(a6)
@@ -519,8 +522,9 @@ lsysPlaySequence2:
 
 ;--------
 .part4:
-		cmp		#LSYS_START_BEAT+8+8+8,d0
-		bge		.part5
+		subi	#4,d0
+		; cmp		#LSYS_START_BEAT+8+8+8,d0
+		bpl		.part5
 		tst.b	2(a6)
 		bne.s	.p4main
 		st		2(a6)
@@ -549,8 +553,9 @@ lsysPlaySequence2:
 
 ;--------
 .part5:
-		cmp		#LSYS_START_BEAT+8+8+8+8,d0
-		bge		.part6
+		subi	#8,d0
+		; cmp		#LSYS_START_BEAT+8+8+8+8,d0
+		bpl		.part6
 		tst.b	3(a6)
 ;		bne.s	.p5main
 		bne.s	.p6main
@@ -575,8 +580,9 @@ lsysPlaySequence2:
 
 ;--------
 .part6:
-		cmp		#LSYS_START_BEAT+8+8+8+8+8,d0
-		bge		.part7
+		subi	#8,d0
+		; cmp		#LSYS_START_BEAT+8+8+8+8+8,d0
+		bpl		.part7
 		tst.b	4(a6)
 		bne.s	.p6main
 		st		4(a6)
@@ -594,8 +600,9 @@ lsysPlaySequence2:
 
 ;--------
 .part7:
-		cmp		#LSYS_START_BEAT+8+8+8+8+8+8,d0
-		bge		.part8
+		subi	#8,d0
+		; cmp		#LSYS_START_BEAT+8+8+8+8+8+8,d0
+		bpl		.part8
 		tst.b	5(a6)
 		bne.s	.p8main
 		; bne.s	.p7main
@@ -619,8 +626,9 @@ lsysPlaySequence2:
 
 ;--------
 .part8:
-		cmp		#LSYS_START_BEAT+8+8+8+8+8+8+8,d0
-		bge		.part9
+		subi	#8,d0
+		; cmp		#LSYS_START_BEAT+8+8+8+8+8+8+8,d0
+		bpl		.part9
 		tst.b	6(a6)
 		bne.s	.p8main
 		st		6(a6)
@@ -641,8 +649,9 @@ lsysPlaySequence2:
 
 ;--------  $0c98 d77
 .part9:
-		cmp		#LSYS_START_BEAT+8+8+8+8+8+8+8+4,d0
-		bge		.finished
+		subi	#2,d0
+		; cmp		#LSYS_START_BEAT+8+8+8+8+8+8+8+4,d0
+		bpl		.finished
 		subi.b	#1,7(a6)
 		bne		.noB
 		move.b	#4,7(a6)
@@ -1055,7 +1064,11 @@ scrollPart:
 
 		bsr 	scrollInit
 		bsr		ccInit										;chunky copper
+		bsr		ccSetScrPlasma								; set the mask screen background and modulo
 		bsr		ccSineTabsInit
+		bsr		bannerInit
+		lea		bannerTxt1(pc),a1
+		bsr		bannerPrintText
 
 		lea		copper_scroll,a2
 		move.l	a2,COP2LC(a0)
@@ -1077,6 +1090,7 @@ scrollPart:
 .mainLoopScroll:
 		bsr		vBlank
 		bsr		ccSequencePlay
+		bsr		blendLogos
 
 		lea		sl(pc),a1					; if music finished then finish part
 		tst		music_ticks_left-sl(a1)
@@ -1101,11 +1115,12 @@ scrollPart:
 		rts
 
 ; ------------------------------------------
-;CC_START_BEAT = 8
-CC_START_BEAT = 2
+CC_START_BEAT = 20
+;CC_START_BEAT = 2
 ccSequencePlay:
 		lea		cc_parts_state(pc),a6				; init etc. state
 		move	beat_relative(pc),d0
+	bra .part5
 		subi	#LSYS_START_BEAT,d0
 		bpl		.part1b
 		bsr		ccCoreP1
@@ -1117,15 +1132,14 @@ ccSequencePlay:
 		bsr		ccCoreP1
 		bsr		ccCanvasClose1a
 		bra		.exit
-;-------
+;------- straight plasma 2
 .part2:
-	bra .part3
-		subi	#16,d0
+		subi	#20,d0
 		bpl		.part2b
 		lea		ccSinCols2(pc),a1
-		addi	#2,2(a1)
-		subi	#4,6(a1)
-		bsr		ccMakeSinMap
+		addi.b	#2,3(a1)
+		subi.b	#4,7(a1)
+		bsr		ccMakeSinColorMap
 
 		bsr		ccCoreP2
 		bsr		ccCanvasOpen1a
@@ -1136,44 +1150,83 @@ ccSequencePlay:
 		bsr		ccCoreP2
 		bsr		ccCanvasClose1a
 		bra		.exit
-;-------
+;------- plop plasma 1
 .part3:
-		subi	#16,d0
+		subi	#20,d0
 		bpl		.part3b
 		tst.b	(a6)
 		bne		.p2a
 		st		(a6)
 		lea		ccSinCols3(pc),a1
-		bsr		ccMakeSinMap
+		bsr		ccMakeSinColorMap
 		bra		.exit
 .p2a:
 		bsr		ccCoreP3
 		bsr		ccCanvasOpen1a
 		bra		.exit
 .part3b:
-		subi	#2,d0
+		subi	#1,d0
 		bpl		.part4
-		; tst.b	3(a6)
-		; bne		.p3b
-		; st		3(a6)
-		; lea		cc_open_cnt(pc),a1
-		; move	#3,2(a1)
-.p3b:	bsr		ccCoreP3
+		bsr		ccCoreP3
 		bsr		ccCanvasClose1a
 		bra		.exit
-;-------
+;------- plop plasma 2
 .part4:
+		subi	#20,d0
+		bpl		.part4b
+		tst.b	1(a6)
+		bne		.p4a
+		st		1(a6)
+		lea		ccSinCols4(pc),a1
+		bsr		ccMakeSinColorMap
+		bra		.exit
+.p4a:
+		bsr		ccCoreP4
+		bsr		ccCanvasOpen1a
+		bra		.exit
+.part4b:
+		subi	#1,d0
+		bpl		.part5
+		bsr		ccCoreP4
+		bsr		ccCanvasClose1a
+		bra		.exit
+;------- banner
+.part5:
+		subi	#120,d0
+		bpl		.part5b
+		tst.b	(a6)
+		bne		.p5a
+		st		(a6)
+		lea		ccSinCols5(pc),a1
+		bsr		ccMakeSinColorMap
+		bsr		ccSetScrBanner
+		bra		.exit
+.p5a:
+		bsr		ccCoreP5
+;		bsr		ccCanvasOpen1a
+		bra		.exit
+.part5b:
+		subi	#1,d0
+		bpl		.part6
+		bsr		ccCoreP5
+;		bsr		ccCanvasClose1a
+		bra		.exit
+;-------
+.part6:
 
 
 		nop
 .exit:
 		rts
 
+
+;-------
 ccCoreP1:
 		lea		ccP1_1(pc),a1
 CCP1a:	bsr		ccPlasm01
+CCP1b:
+	; REMOVE
 	move #$000,COLOR00(a0)
-		bsr		blendLogos
 		rts
 
 ccCoreP2:
@@ -1183,9 +1236,23 @@ ccCoreP2:
 ccCoreP3:
 		lea		ccP2_1(pc),a1
 CCP3a:	bsr		ccPlasm02
-	move #$000,COLOR00(a0)
-		bsr		blendLogos
-		rts
+		bra		CCP1b
+
+ccCoreP4:
+		lea		ccP2_2(pc),a1
+		bra		CCP3a
+
+ccCoreP5:
+		bsr		bannerMove
+		lea		ccP1_3(pc),a1
+		bsr		ccPlasm01
+		lea		ccSinCols5(pc),a1
+		addi.b	#2,3(a1)
+		; subi.b	#2,7(a1)
+		subi.b	#4,11(a1)
+		bsr		ccMakeSinColorMap
+		bra		CCP1b
+
 
 cc_parts_state:		dc.b	0,0
 	EVEN
@@ -1195,13 +1262,17 @@ cc_parts_state:		dc.b	0,0
 CC_Y = 32
 CC_X = 30
 
+CC_SIN_LEN = 256
+CC_SIN_COL_LEN = 128
+
 CC_SIN_256 = 0
-CC_SIN_A = 256*2
-CC_SIN_B = CC_SIN_A+256*2
-CC_SIN_CR = CC_SIN_B+256*2
-CC_SIN_CG = CC_SIN_CR+256*2
-CC_SIN_CB = CC_SIN_CG+256*2
-CC_SIN_MAP = CC_SIN_CB+256*2
+CC_SIN_A = CC_SIN_LEN
+CC_SIN_B = CC_SIN_A+CC_SIN_LEN
+CC_SIN_COL = CC_SIN_B+CC_SIN_LEN
+CC_SIN_CR = CC_SIN_COL+CC_SIN_LEN
+CC_SIN_CG = CC_SIN_CR+CC_SIN_COL_LEN*2
+CC_SIN_CB = CC_SIN_CG+CC_SIN_COL_LEN*2
+CC_SIN_COL_MAP = CC_SIN_CB+CC_SIN_COL_LEN*2
 ; ------------------------------------------
 ; a1 - control struct
 ccPlasm01:
@@ -1209,67 +1280,58 @@ ccPlasm01:
 		move.l	a1,a2
 		move	(a2)+,d7
 .adv1:	move	(a2)+,d0
-		add		d0,(a2)+				; advance all sines
+		add		d0,(a2)					; advance all sines
+		andi	#$ff,(a2)+
 		dbf		d7,.adv1
 
 		move.l	mem_bss_public(pc),a3
 		adda.l	#CC_sin256,a3
 		lea		CC_SIN_A(a3),a4
-		lea		CC_SIN_MAP(a3),a6
-
-		move	#510,d2
+		lea		CC_SIN_COL_MAP(a3),a6
 
 		move	4(a1),d4
-		and		d2,d4
-		move	(a3,d4.w),d0
+		move.b	(a3,d4.w),d0
 		move	8(a1),d4
-		and		d2,d4
-		add		(a4,d4.w),d0			; starting value
+		add.b	(a4,d4.w),d0			; starting value
 
 		lea		copper_cc+16,a2			; colors start, skip first 4 copper instructions
 		move.l	#(COLOR01<<16),d5
-		moveq	#CC_Y*2,d7
+		moveq	#CC_Y-1,d7
 
-		move	18(a1),d3				; X add
 		move	12(a1),d4				; y start 1
 		move	16(a1),a5				; y start 2
+		move	18(a1),d3				; X add
 .loopY:
 		move	d4,d5
-		add		d7,d5
-		and		d2,d5
-		move	(a4,d5.w),d1
-		add		d0,d1
+		add.b	d7,d5
+		move.b	(a4,d5.w),d1
+		add.b	d0,d1
 
 		move	a5,d5
-		add		d7,d5
-		and		d2,d5
-		add		(a3,d5.w),d1
-		lsl		d1						; color index in words
+		add.b	d7,d5
+		add.b	(a3,d5.w),d1
+		andi	#$fe,d1						; color index in words
 
 		moveq	#CC_X-1,d6
-		; moveq	#1,d6
-		; moveq	#CC_X/2-1,d6
 .loopX:
-		; REPT	2
-		and		d2,d1
 		move	(a6,d1.w),d5			; color map
-		add		d3,d1
+		add.b	d3,d1
 		move.l	d5,(a2)+				; COLOR00 + color
 		move.l	d5,(CC_ROWLEN*4)-4(a2)
 		move.l	d5,2*(CC_ROWLEN*4)-4(a2)
 		move.l	d5,3*(CC_ROWLEN*4)-4(a2)
-		; ENDR
 		dbf		d6,.loopX
 
 		lea		8+16+4*CC_ROWLEN*(CC_Y_REPS-1)(a2),a2				; skip last col + bpl off, and start of next row
-		subq	#2,d7
-		bne		.loopY
+		dbf		d7,.loopY
 
 		movem.l	(sp)+,d0-d7/a1-a6
 		rts
 
-ccP1_1:	dc.w	3, -3,20, 1,50, 2,0, -1,0, 5			; or of tuples, (spd,cnt) tuples, X add
-ccP1_2:	dc.w	3, 2,40, -2,50, -3,0, 2,0, 8
+ccP1_1:	dc.w	3, -2,10, 1,24, 1,0, -1,0, 2			; or of tuples, (spd,cnt) tuples, X add
+ccP1_2:	dc.w	3, 1,40, -1,26, -2,0, 1,0, 4
+;ccP1_3:	dc.w	3, 1,0, 2,50, -1,0, -2,128, 2
+ccP1_3:	dc.w	3, 1,0, 2,50, -1,128, -2,64, 4
 
 ; ------------------------------------------
 ; a1 - control struct
@@ -1278,95 +1340,87 @@ ccPlasm02:
 		move.l	a1,a2
 		move	(a2)+,d7
 .adv1:	move	(a2)+,d0
-		add		d0,(a2)+				; advance all sines
+		add		d0,(a2)					; advance all sines
+		andi	#$ff,(a2)+
 		dbf		d7,.adv1
 
 		move.l	mem_bss_public(pc),a3
 		adda.l	#CC_sin256,a3
 		lea		CC_SIN_A(a3),a4
-		lea		CC_SIN_MAP(a3),a6
-
-		move	#510,d2
+		lea		CC_SIN_COL_MAP(a3),a6
 
 		move	4(a1),d4
-		and		d2,d4
-		move	(a3,d4.w),d0
+		move.b	(a3,d4.w),d0
 		move	8(a1),d4
-		and		d2,d4
-		add		(a4,d4.w),d0			; starting value1 d0
+		add.b	(a4,d4.w),d0			; starting value1 d0
 
 		move	16+4(a1),d4
-		and		d2,d4
-		move	(a3,d4.w),d3
+		move.b	(a3,d4.w),d3
 		move	16+8(a1),d4
-		and		d2,d4
-		add		(a4,d4.w),d3			; starting value2 d3
-
+		add.b	(a4,d4.w),d3			; starting value2 d3
 
 		lea		CC_SIN_B(a3),a3
 
 		lea		copper_cc+16,a2			; colors start, skip first 4 copper instructions
 		move.l	#(COLOR01<<16),d5
-		moveq	#CC_Y*2,d7
 
-		; move	18(a1),d3				; X add
-		; move	12(a1),d4				; y start 1
-		move	16+16+2(a1),a5				; y start 2
+		move	16+16+2(a1),d2			; x add 1 and 2
+		move	16+16+4(a1),d7
+		swap	d7
+		move	#CC_Y-1,d7
 .loopY:
 		move	12(a1),d5
-		add		d7,d5
-		and		d2,d5
-		move	(a4,d5.w),d1			; sin A
-		add		d0,d1
+		add.b	d7,d5
+		move.b	(a4,d5.w),d1			; sin A
+		add.b	d0,d1
 
 		move	16(a1),d5
-		add		d7,d5
-		and		d2,d5
-		add		(a3,d5.w),d1			; sin B
-		lsl		d1						; color index in words
+		add.b	d7,d5
+		add.b	(a3,d5.w),d1			; sin B
+		andi	#$fe,d1						; color index in words
 
 		move	16+12(a1),d5
-		add		d7,d5
-		and		d2,d5
-		move	(a4,d5.w),d4			; sin A
-		add		d3,d4
+		add.b	d7,d5
+		move.b	(a4,d5.w),d4			; sin A
+		add.b	d3,d4
 
 		move	16+16(a1),d5
-		add		d7,d5
-		and		d2,d5
-		add		(a3,d5.w),d4			; sin B
-		lsl		d4						; color index in words
+		add.b	d7,d5
+		add.b	(a3,d5.w),d4			; sin B
+		andi	#$fe,d4						; color index in words
 
+		swap d7
 		moveq	#CC_X-1,d6
 .loopX:
-		and		d2,d1
 		move	(a6,d1.w),d5			; color map
-		add		a5,d1
-		and		d2,d4
+		add.b	d2,d1
 		add		(a6,d4.w),d5			; color map
-		add		16+16+4(a1),d4
+		add.b	d7,d4
 
 		move.l	d5,(a2)+				; COLOR00 + color
 		move.l	d5,(CC_ROWLEN*4)-4(a2)
 		move.l	d5,2*(CC_ROWLEN*4)-4(a2)
 		move.l	d5,3*(CC_ROWLEN*4)-4(a2)
 		dbf		d6,.loopX
+		swap	d7
 
 		lea		8+16+4*CC_ROWLEN*(CC_Y_REPS-1)(a2),a2				; skip last col + bpl off, and start of next row
-		subq	#2,d7
-		bne		.loopY
+		dbf		d7,.loopY
 
 
 		movem.l	(sp)+,d0-d7/a1-a6
 		rts
 
-ccP2_1:	dc.w	7, 	2,0, 4,80, 4,170*2, 2,40						; or of tuples, (spd,cnt) tuples, X adds
-		dc.w		-4,160, -2,140, 2,0, 6,46, 4,3 
+ccP2_1:	dc.w	7, 	1,0, 1,64, -1,128, 1,0						; or of tuples, (spd,cnt) tuples, X adds
+		dc.w		-1,0, -1,128, 1,0, 2,128, 2,4
+
+ccP2_2:	dc.w	7, 	1,0, -1,64, -1,128, 1,0						; or of tuples, (spd,cnt) tuples, X adds
+		dc.w		-1,0, -1,128, 1,0, 1,128, 2,4
 
 ; ------------------------------------------
 ; a1 - sin col tab
-ccMakeSinMap:
-		movem.l	d0-d7/a2-a6,-(sp)
+ccMakeSinColorMap:
+		movem.l	d0-d7/a2-a5,-(sp)
 		move.l	mem_bss_public(pc),a2
 		move.l	a2,a3
 		move.l	a2,a4
@@ -1374,33 +1428,33 @@ ccMakeSinMap:
 		adda.l	#CC_sinCR,a2
 		adda.l	#CC_sinCG,a3
 		adda.l	#CC_sinCB,a4
-		adda.l	#CC_sinMap,a5
+		adda.l	#CC_sinColMap,a5
 		move	2(a1),d0				; starting positions
 		move	6(a1),d1
 		move	10(a1),d2
-		move	(a1),a6					; speeds
-		move	4(a1),d4
-		move	8(a1),d5
-		move	#510,d6
-		move	#255,d7
-.sl:	and		d6,d0
+		move	(a1),d4					; speeds
+		move	4(a1),d5
+		move	8(a1),d6
+		move	#CC_SIN_COL_LEN-1,d7
+.sl:
 		move	(a2,d0.w),d3
-		and		d6,d1
 		or		(a3,d1.w),d3
-		and		d6,d2
 		or		(a4,d2.w),d3
-		add		a6,d0
-		add		d4,d1
-		add		d5,d2
+		add.b	d4,d0
+		add.b	d5,d1
+		add.b	d6,d2
 		move	d3,(a5)+
 		dbf		d7,.sl
-		movem.l	(sp)+,d0-d7/a2-a6
+		movem.l	(sp)+,d0-d7/a2-a5
 
 		rts
 
-ccSinCols1:	dc.w	-4,0, 0,128*3, 6,0
-ccSinCols2:	dc.w	6,50, 2,50, -4,10
+ccSinCols1:	dc.w	-4,0, 0,64*3, 6,0
+ccSinCols2:	dc.w	6,24, 2,24, -4,10
 ccSinCols3:	dc.w	2,0, 2,0, 2,0
+ccSinCols4:	dc.w	4,128, 0,0, 2,0
+;ccSinCols5:	dc.w	2,64, -2,32, 4,0
+ccSinCols5:	dc.w	2,64, -2,128, 4,0
 
 ; ------------------------------------------
 ; d0.w - main pattern
@@ -1492,17 +1546,21 @@ ccSineTabsInit:
 		bsr		ccSineCreate
 
 		move.l	mem_bss_public(pc),a1
-		adda.l	#CC_sinCB,a1				; blue only
+		adda.l	#CC_sinCol,a1				; blue only
 		move	#8,d0
 		move	d0,d1
 		bsr		ccSineCreate
 
 		move.l	mem_bss_public(pc),a1
 		move.l	a1,a2
+		move.l	a1,a4
+		adda.l	#CC_sinCB,a4				; blue
 		adda.l	#CC_sinCG,a1				; green and red
 		adda.l	#CC_sinCR,a2
-		move	#255,d7
-.sl:	move	(a3)+,d0
+		move	#CC_SIN_COL_LEN-1,d7
+.sl:	move	(a3)+,d0					; read 2 bytes but drop one as the col len is half the normal sin len as it needs to be in words
+		andi	#$f,d0
+		move	d0,(a4)+
 		asl		#4,d0
 		move	d0,(a1)+
 		asl		#4,d0
@@ -1510,23 +1568,23 @@ ccSineTabsInit:
 		dbf		d7,.sl
 
 		lea		ccSinCols1(pc),a1
-		bsr		ccMakeSinMap
+		bsr		ccMakeSinColorMap
 
 		rts
 
-; a1: target sine (256w), d0: amplitude, d1 - centre
+; a1: target sine (256b), d0: amplitude, d1 - centre
 ccSineCreate:
 		move.l	a1,a3
 		lea		sine_14b_256(pc),a2
 		asl		#2,d0
-		move	#255,d7
+		move	#CC_SIN_LEN-1,d7
 .sl:	move	(a2)+,d3
 		muls	d0,d3
 		swap	d3
 		add		d1,d3
-		move	d3,(a1)+
+		move.b	d3,(a1)+
 		dbf		d7,.sl
-		move	126(a3),128(a3)				; fix one out of range value
+		move.b	63(a3),64(a3)				; fix one out of range value
 		rts
 
 ; ------------------------------------------
@@ -1534,14 +1592,18 @@ ccSineCreate:
 ccInit:
 		movem.l	ALL,-(sp)
 		lea		copper_cc,a1
-		move.l	#((CC_Y0*256+CC_X0)<<16)+$fffe,d0
+		move.l	#((CC_Y0*256+CC_X0)<<16)+$fffe,d0		; row wait right X pos
 		move.l	#$1000000,d1
 		move.l	#(COLOR01<<16)+BC_PURPLE,d2
-		move.l	#((CC_Y0*256+1)<<16)+$fffe,d5
+;		move.l	#((CC_Y0*256+1)<<16)+$fffe,d5
+		move.l	#((CC_Y0*256+$21)<<16)+$fffe,d5			; row start wait
 		; move.l	#(BPLCON0<<16)+$1200,d3
 		; move.l	#(BPLCON0<<16)+$0200,d4
-		move.l	#(COLOR03<<16)+BC_PURPLE,d3
-		move.l	#(COLOR03<<16)+BC_PURPLE,d4
+		; move.l	#(COLOR03<<16)+BC_PURPLE,d3
+		; move.l	#(COLOR03<<16)+BC_PURPLE,d4
+		move.l	#(BPL1MOD<<16),d3
+		move	#-(CC_X),d3								; modulo at front of the line
+		move.l	#(COLOR03<<16)+BC_PURPLE,d4				; this is not necessary but left to avoid redoing some of the position calculations
 		move.l	#(BPLCON1<<16)+$0088,a3
 		move.l	#(BPLCON1<<16)+$00AA,a4
 		moveq	#CC_Y-1,d7
@@ -1556,30 +1618,170 @@ ccInit:
 		bsr		.rowInit
 		dbf		d7,.ccY
 
+		movem.l	(sp)+,ALL
+		rts
+
+.rowInit:
+		move.l	d5,(a1)+				; wait row start (0)
+		move.l	d3,(a1)+				; set modulo (4)
+		move.l	a2,(a1)+				; shift
+		move.l	d0,(a1)+				; wait row X
+		moveq	#CC_X,d6
+.ccX1:	
+		move.l	d2,(a1)+				; col+val
+		dbf		d6,.ccX1
+		move.l	d4,(a1)+				; bpl off
+		add.l	d1,d0					; move to next row
+		add.l 	d1,d5
+		rts
+
+; set bpl addr for plasma
+ccSetScrPlasma:
 		lea		copper_cc_bpls,a1
 		lea		cc_mask,a2				; setup mask bitplane
 		move.l	a2,d0
 		move	d0,6(a1)
 		swap	d0
 		move	d0,2(a1)
+;		move	#-(CC_X),10(a1)			; modulo
 
-		movem.l	(sp)+,ALL
+		bsr		ccSetModsPlasma
 		rts
 
-.rowInit:
-		move.l	d5,(a1)+				; wait row start
-		move.l	d3,(a1)+				; bpl on
-		move.l	a2,(a1)+				; shift
-		move.l	d0,(a1)+				; wait row X
-		; moveq	#CC_X-1,d6
-		moveq	#CC_X,d6
-.ccX1:	
-		; move.l	d1,(a1)+				; col+val
-		move.l	d2,(a1)+				; col+val
-		dbf		d6,.ccX1
-		move.l	d4,(a1)+				; bpl off
-		add.l	d1,d0					; move to next row
-		add.l 	d1,d5
+; set row modulos for plasma
+ccSetModsPlasma:
+		lea		copper_cc,a1
+		moveq	#CC_Y*4-1,d7
+.m1:	move	#-(CC_X),6(a1)
+		adda.l	#CC_ROWLEN*4,a1
+		dbf		d7,.m1
+		lea		copper_cc,a1
+		rts
+
+; ------------------------------------------
+BANNER_X = 8*32					; keep is a multiple of 16
+BANNER_Y = BANNER_FNT_Y+2
+BANNER_FNT_CHARS = 59
+BANNER_FNT_Y = 15
+BANNER_FNT_X = 16
+; banner init
+bannerInit:
+		move.l	mem_bss_chip(pc),a3
+		adda.l	#Banner_buffer,a3
+		moveq	#0,d0
+		move	#((BANNER_X*BANNER_Y)/4)/4-1,d7		; clear buffer - only once
+.clr:	REPT	4
+		move.l	d0,(a3)+
+		ENDR
+		dbf		d7,.clr
+		rts
+
+; --------------
+; moves banner - X and Y
+bannerMove:
+		moveq	#58,d0
+		moveq	#0,d1
+		move.b	scroll_sin_last_val(pc),d1
+		move	d1,d2
+		lsl		d1
+		add		d2,d1		;*3
+		sub		d1,d0
+		bsr		ccSetModsBanner					; scroll Y jump
+
+		lea		bannerBufferAddr(pc),a1
+		subi	#1,bannerDelay-bannerBufferAddr(a1)
+		bne		.noX
+		move	#10,bannerDelay-bannerBufferAddr(a1)
+		move.l	(a1),d0
+		addi.l	#1,(a1)
+		bsr		ccSetScrBanner2
+.noX:
+		rts
+
+bannerBufferAddr:	dc.l	0
+bannerDelay:		dc.w	4
+
+; --------------
+; a1 - text
+bannerPrintText:
+		lea 	font_16_15_1,a2
+		move.l	mem_bss_chip(pc),a3
+		adda.l	#Banner_buffer+BANNER_X,a3		; skip 1st row
+.parseTxt:
+		moveq	#0,d0
+		move.b	(a1)+,d0
+		beq		.endTxt
+		subi.b	#32,d0
+		lsl		d0						; letters are 2 bytes wide
+		lea		(a2,d0.w),a4			; start of letter
+		move	#BANNER_FNT_Y-1,d7
+.pCharY:
+		move.l	a3,a5					; start position in buffer
+		move	(a4),d0
+		moveq	#BANNER_FNT_X/2-1,d6
+.pCharX:								; print 2 nibbles in 1 byte
+		asl		d0
+		bcc		.np1
+		move.b	#$40,d1
+		bra		.p1
+.np1:	move.b	#0,d1
+.p1:	asl		d0
+		bcc		.np2
+		ori.b	#$04,d1
+.np2:
+		move.b	d1,(a5)+
+		dbf		d6,.pCharX
+		adda.l	#BANNER_X,a3			; move to next buffer row
+		adda.l	#BANNER_FNT_CHARS*2,a4	; move to next letter row
+		dbf		d7,.pCharY
+
+		suba.l	#BANNER_X*BANNER_FNT_Y-BANNER_FNT_X/2,a3		; move back to first row in buffer but start of new letter
+		bra		.parseTxt
+.endTxt:
+		rts
+
+bannerTxt1:		dc.b	"ABC COOL TEST ",0
+		EVEN
+
+; --------------
+ccSetScrBanner:
+		move.l	mem_bss_chip(pc),d0
+		addi.l	#Banner_buffer,d0
+		lea		bannerBufferAddr(pc),a2
+		move.l	d0,(a2)							; save for later
+ccSetScrBanner2:
+		lea		copper_cc_bpls,a1
+		move	d0,6(a1)
+		swap	d0
+		move	d0,2(a1)
+		rts
+
+; --------------
+; set row modulos for bannner
+; d0 - position from top (0-128 minus 68 (17*4) = 60)
+ccSetModsBanner:
+		lea		copper_cc,a1
+		moveq	#127-BANNER_Y,d1
+		sub		d0,d1							; remaining rows (down)
+
+		move	d0,d7
+		beq		.noup
+		subq	#1,d7
+.up:	move	#-(CC_X),6(a1)					; first row always loops back
+		adda.l	#CC_ROWLEN*4,a1
+		dbf		d7,.up
+.noup:
+		moveq	#BANNER_Y-1,d7
+.mid:	move	#BANNER_X-CC_X,6(a1)
+		move	#-(CC_X),CC_ROWLEN*4+6(a1)
+		move	#-(CC_X),2*CC_ROWLEN*4+6(a1)
+		move	#-(CC_X),3*CC_ROWLEN*4+6(a1)
+		adda.l	#4*CC_ROWLEN*4,a1
+		dbf		d7,.mid
+
+.down:	move	#-(CC_X),6(a1)					; first row always loops back
+		adda.l	#CC_ROWLEN*4,a1
+		dbf		d1,.down
 		rts
 
 ; ------------------------------------------
@@ -1606,6 +1808,9 @@ scrollMove:
 		move	#2*MUS_TPB-1,d0
 .sm2:	move.b	d0,(a1)+
 		move.b	(a1,d0.w),d0		; sin value
+
+		move.b	d0,scroll_sin_last_val-scroll_sin-1(a1)		; same scroll sin value for reuse by the banner
+
 		lea		copper_scroll_ypos,a1
 		.FOFS:	SET 0
 		REPT	5
@@ -2261,6 +2466,7 @@ beat_relative:			dc.w	0			; relative beat counter which can be reset and keeps c
 music_ticks_left:		dc.w	0			; fill in after initialising music - indicates how many ticks to play
 beat_next:				dc.w	MUS_TPB		; next beat in ticks
 
+
 BL_RANGE = 3*MUS_TPB
 TRANS_SCHED_MAX = 5
 logo_trans_delay:		dc.w	3
@@ -2273,7 +2479,8 @@ logo_trans_schedule:	dc.w	3, 19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0		
 logo_trans_speed:		dc.w	1,1,1,1,1, 1,1,1,1,1, 1,1,1,1,1, 1,1,1,1,1
 
 
-scroll_sin:		dc.b	MUS_TPB*2,1,2,3,4,5,6,7,8,9,10,11,12,12,13,14,14,15,15,16,16,16,17,17,17,17,17,17,17,16,16,16,15,15,14,14,13,12,12,11,10,9,8,7,6,5,4,3,2
+scroll_sin:				dc.b	MUS_TPB*2,1,2,3,4,5,6,7,8,9,10,11,12,12,13,14,14,15,15,16,16,16,17,17,17,17,17,17,17,16,16,16,15,15,14,14,13,12,12,11,10,9,8,7,6,5,4,3,2
+scroll_sin_last_val:	dc.b	0
 						EVEN
 
 logo_suspect_palette:
@@ -2368,23 +2575,22 @@ copper_scroll_logo_bpls:
 		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0,BPL3PTH,0,BPL3PTL,0,BPL4PTH,0,BPL4PTL,0
 		dc.w	$3001,$fffe, BPLCON0, $4200
 		dc.w	$7001,$fffe, BPLCON0, $0200
+
 CC_Y_REPS = 4
 CC_Y0 = $78
 CC_X0 = $53
 CC_ROWLEN = (CC_X+2+4)
 copper_cc_bpls:
-		dc.w	BPL1PTH,0,BPL1PTL,0
-		dc.w	BPL1MOD,-(CC_X)
+		dc.w	BPL1PTH,0,BPL1PTL,0, BPL1MOD,0
 		dc.w	COLOR01, BC_PURPLE
-;		dc.w	DIWSTRT, $2C51, DIWSTOP, $1EA1
 		dc.w	DDFSTRT, $0048, DDFSTOP, $00B8, BPLCON1, $0077
 
-		dc.w	$7701,$fffe, BPLCON0, $1200
+		dc.w	CC_Y0<<8+$01,$fffe, BPLCON0, $1200
 copper_cc:		ds.l	CC_ROWLEN*(CC_Y*CC_Y_REPS)
 		; dc.w	$7853,$fffe, COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff
 		; 			dc.w	COLOR00, $111, COLOR00, $222, COLOR00, $333, COLOR00, $444, COLOR00, $555, COLOR00, $666, COLOR00, $777, COLOR00, $888, COLOR00, $999, COLOR00, $aaa, COLOR00, $bbb, COLOR00, $ccc, COLOR00, $ddd, COLOR00, $eee, COLOR00, $fff, COLOR00, BC_PURPLE
 copper_cc_end:
-		dc.w	$f701,$fffe, BPLCON0, $0200
+		dc.w	BPLCON0, $0200
 
 		dc.w	$ffdf,$fffe
 		dc.w	$0001,$fffe
@@ -2476,8 +2682,8 @@ LSP_Music:
    	INCBIN		"assets/Bartesek - Hey Simone!.lsmusic"
 	endif
 	EVEN
-; font_16_15_1:
-;    	INCBIN		"assets/font_16x15x1.bpl"
+font_16_15_1:
+   	INCBIN		"assets/font_16x15x1.bpl"
 font_8_12_4:
    	INCBIN		"assets/font_8x12x4.bpl"
 scroll_text:
@@ -2500,10 +2706,16 @@ SCROLL_CHARS = 60
 
 	RSRESET
 	Logo_screen1:				rs.b	LOGO_SIZE
-	LS_Screen2:					rs.b	LSYS_X*LSYS_Y
 	Scroll_buffer:				rs.b	SCROLL_LEN*2*SCROLL_Y
 	Logo_trans_buffer:			rs.b	LOGO_SIZE*(LOGO_TRANS_NR-2)
+	LS_Screen2:					rs.b	LSYS_X*LSYS_Y
 	BSS_CHIP_2:					rs.w	0
+
+	RSSET Scroll_buffer			; vasm refuses to start with LS_Screen2
+	Scroll_buffer_temp:			rs.b	SCROLL_LEN*2*SCROLL_Y
+	Logo_trans_buffer_temp:		rs.b	LOGO_SIZE*(LOGO_TRANS_NR-2)
+	Banner_buffer:				rs.b	BANNER_X*BANNER_Y
+	BSS_CHIP_3:					rs.w	0
 
 LS_Screen1 = Logo_screen1
 
@@ -2511,9 +2723,13 @@ BSS_CHIP_ALLOC_MAX set BSS_CHIP_1
 	ifgt BSS_CHIP_2-BSS_CHIP_ALLOC_MAX
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_2	
 	endif
+	ifgt BSS_CHIP_3-BSS_CHIP_ALLOC_MAX
+BSS_CHIP_ALLOC_MAX set BSS_CHIP_3	
+	endif
 
 	echo 		"BSS 1: ", BSS_CHIP_1
 	echo 		"BSS 2: ", BSS_CHIP_2
+	echo 		"BSS 3: ", BSS_CHIP_3
 
 	ds.b		BSS_CHIP_ALLOC_MAX
 
@@ -2533,19 +2749,16 @@ mbp:
 	BSS_PUBLIC_1:				rs.w	0
 
 	RSSET LS_recursion_tab1
-	CC_sin256:					rs.w	256
-	CC_sinA:					rs.w	256
-	CC_sinB:					rs.w	256
-	CC_sinCR:					rs.w	256
-	CC_sinCG:					rs.w	256
-	CC_sinCB:					rs.w	256
-	CC_sinMap:					rs.w	256
+	CC_sin256:					rs.b	CC_SIN_LEN
+	CC_sinA:					rs.b	CC_SIN_LEN
+	CC_sinB:					rs.b	CC_SIN_LEN
+	CC_sinCol:					rs.b	CC_SIN_LEN
+	CC_sinCR:					rs.w	CC_SIN_COL_LEN
+	CC_sinCG:					rs.w	CC_SIN_COL_LEN
+	CC_sinCB:					rs.w	CC_SIN_COL_LEN
+	CC_sinColMap:				rs.w	CC_SIN_COL_LEN
 	BSS_PUBLIC_2:				rs.w	0
 
-	; echo	"rc: ", LS_recursion_tab1
-	; echo	"bo: ", LS_bobs_tab1
-	; echo	"sA: ", CC_sinA
-	; echo	"aB: ", CC_sinC
 	echo	"p1: ", BSS_PUBLIC_1
 	echo	"p2: ", BSS_PUBLIC_2
 
