@@ -1,6 +1,6 @@
 ; Eire - 40k intro for the Boom 2025 party, Tuchola, Poland
-; Pawel Matusz / Kane (kane@konto.pl)
-; 25/06/2025 - TBD
+; Pawel Matusz (Kane/Suspect) 
+; 25/06/2025 - 20/07/2025
 
     TTL         "Eire"
 
@@ -59,9 +59,9 @@ s:
 		dbf		d7,.mkCos
 
 parts:
-;		bsr		eirePart
-;		bsr		swipeScreenPart
-;		bsr		lsystemPart
+		bsr		eirePart
+		bsr		swipeScreenPart
+		bsr		lsystemPart
 		bsr		scrollPart
 		bsr		endPart
 
@@ -313,14 +313,17 @@ swipeScreenPart:
 		lea		CUSTOM,a0
 		lea		copper_blank_purple,a1
 		move.l	a1,COP2LC(a0)
-		move	#20,d0
-		bsr		vWait
+		; move	#20,d0
+		; bsr		vWait
+		bsr		vBlank
 		rts
 
 ;-----------------------------------------------------------------------
 ;-----------------------------------------------------------------------
 eirePart:
 		lea		CUSTOM,a0
+		WAIT	10
+
 		lea		logo_Eire,a1
 		lea		copper_eire_logo_bpls,a2
 		moveq	#EIRE_BPL-1,d0
@@ -329,18 +332,32 @@ eirePart:
 
 		lea		copper_eire,a2
 		move.l	a2,COP2LC(a0)
-		VBLANK
+		bsr		vBlank
+
+		lea		transformColorsProc(pc),a1	; slide logo up proc
+		lea		eireTransformProc(pc),a2
+		move.l	a2,(a1)
 
 		lea		copper_eire_logo_cols,a1
 		lea		logo_eire_palette(pc),a2
 		moveq	#2,d0
 		bsr		fadeColorsIn
 
-;		TESTLMB
-		WAIT	200
+		WAIT	210
 
 		bsr		fadeColorsOut
+		lea		transformColorsProc(pc),a1	; remove proc
+		clr.l	(a1)
 
+		rts
+
+
+eireTransformProc:
+		move.l	a1,-(sp)
+		lea		copper_eire_logo_bplcon,a1
+		subi.b	#2,(a1)						; slide logo up
+		subi.b	#2,8(a1)
+		move.l	(sp)+,a1
 		rts
 
 ;-----------------------------------------------------------------------
@@ -1093,34 +1110,64 @@ scrollPart:
 		bsr		blendLogos
 
 		lea		sl(pc),a1					; if music finished then finish part
-		tst		music_ticks_left-sl(a1)
-		beq		.exit
+		move	music_ticks_left-sl(a1),d0
+		cmpi	#255,d0
+		bgt		.mainLoopScroll
+		; beq		.exit
 
-		btst.b  #6,CIAA
-        bne	    .mainLoopScroll
+		; btst.b  #6,CIAA
+        ; bne	    .mainLoopScroll
 
 .exit:
+		bsr		vBlank
+		lea		copper_scroll_ypos,a1
+		move	#$0200,6(a1)				; bpls off for the bottom scroll
+		lea		copper_cc_bpls,a1			; end copper below logo
+		move.l	#-2,(a1)
+		bsr		intL3ProcClear				; remove L3 int proc
+		lea		blitter_queue(pc),a1		; make sure blitter queue is empty
+		BLITTERWAITQUEUE
+		WAITBLIT
+
+		lea		blendLogos(pc),a1			; continue blending logos in the L3 int
+		bsr		intL3ProcSet
+
+		lea		transformColorsProc(pc),a1	; slide logo up proc
+		lea		logoTransformProc(pc),a2
+		move.l	a2,(a1)
+
+
+		lea		copper_scroll_logo_cols,a1
+		lea		logo_suspect_palette(pc),a2
+		lea		base_purple_palette_16(pc),a3
+		moveq	#1,d0
+		bsr		transformColors
+		lea		transformColorsProc(pc),a1	; remove proc
+		clr.l	(a1)
+
 		bsr		vBlank
 		bsr		intL3ProcClear				; remove L3 int proc
 		lea		blitter_queue(pc),a1		; make sure blitter queue is empty
 		BLITTERWAITQUEUE
 		WAITBLIT
 
-		lea		copper_scroll_logo_cols,a1
-		lea		logo_suspect_palette(pc),a2
-		lea		base_purple_palette_16(pc),a3
-		moveq	#2,d0
-		bsr		transformColors
+		rts
 
+logoTransformProc:
+		move.l	a1,-(sp)
+		lea		copper_scroll_logo_bplcon,a1
+		addi.b	#2,(a1)						; slide logo up
+		addi.b	#2,8(a1)
+		move.l	(sp)+,a1
 		rts
 
 ; ------------------------------------------
-CC_START_BEAT = 20
+CC_START_BEAT = 16
 ;CC_START_BEAT = 2
 ccSequencePlay:
 		lea		cc_parts_state(pc),a6				; init etc. state
 		move	beat_relative(pc),d0
-	bra .part5
+	; bra .part6
 		subi	#LSYS_START_BEAT,d0
 		bpl		.part1b
 		bsr		ccCoreP1
@@ -1134,7 +1181,7 @@ ccSequencePlay:
 		bra		.exit
 ;------- straight plasma 2
 .part2:
-		subi	#20,d0
+		subi	#16,d0
 		bpl		.part2b
 		lea		ccSinCols2(pc),a1
 		addi.b	#2,3(a1)
@@ -1152,15 +1199,15 @@ ccSequencePlay:
 		bra		.exit
 ;------- plop plasma 1
 .part3:
-		subi	#20,d0
+		subi	#18,d0
 		bpl		.part3b
 		tst.b	(a6)
-		bne		.p2a
+		bne		.p3a
 		st		(a6)
 		lea		ccSinCols3(pc),a1
 		bsr		ccMakeSinColorMap
 		bra		.exit
-.p2a:
+.p3a:
 		bsr		ccCoreP3
 		bsr		ccCanvasOpen1a
 		bra		.exit
@@ -1172,7 +1219,7 @@ ccSequencePlay:
 		bra		.exit
 ;------- plop plasma 2
 .part4:
-		subi	#20,d0
+		subi	#18,d0
 		bpl		.part4b
 		tst.b	1(a6)
 		bne		.p4a
@@ -1192,29 +1239,25 @@ ccSequencePlay:
 		bra		.exit
 ;------- banner
 .part5:
-		subi	#120,d0
+		subi	#30,d0
 		bpl		.part5b
-		tst.b	(a6)
+		tst.b	2(a6)
 		bne		.p5a
-		st		(a6)
+		st		2(a6)
 		lea		ccSinCols5(pc),a1
 		bsr		ccMakeSinColorMap
-		bsr		ccSetScrBanner
+		bsr		ccSetScrBanner				; set banner screen
 		bra		.exit
 .p5a:
 		bsr		ccCoreP5
-;		bsr		ccCanvasOpen1a
 		bra		.exit
 .part5b:
 		subi	#1,d0
 		bpl		.part6
 		bsr		ccCoreP5
-;		bsr		ccCanvasClose1a
 		bra		.exit
 ;-------
 .part6:
-
-
 		nop
 .exit:
 		rts
@@ -1226,7 +1269,7 @@ ccCoreP1:
 CCP1a:	bsr		ccPlasm01
 CCP1b:
 	; REMOVE
-	move #$000,COLOR00(a0)
+	; move #$000,COLOR00(a0)
 		rts
 
 ccCoreP2:
@@ -1235,26 +1278,26 @@ ccCoreP2:
 
 ccCoreP3:
 		lea		ccP2_1(pc),a1
-CCP3a:	bsr		ccPlasm02
+		bsr		ccPlasm02
 		bra		CCP1b
 
 ccCoreP4:
 		lea		ccP2_2(pc),a1
-		bra		CCP3a
+		bsr		ccPlasm02
+		bra		CCP1b
 
 ccCoreP5:
 		bsr		bannerMove
 		lea		ccP1_3(pc),a1
 		bsr		ccPlasm01
 		lea		ccSinCols5(pc),a1
-		addi.b	#2,3(a1)
-		; subi.b	#2,7(a1)
+		addi.b	#2,3(a1)				; rotate color map
 		subi.b	#4,11(a1)
 		bsr		ccMakeSinColorMap
 		bra		CCP1b
 
 
-cc_parts_state:		dc.b	0,0
+cc_parts_state:		dc.b	0,0,0,0
 	EVEN
 
 
@@ -1330,7 +1373,6 @@ ccPlasm01:
 
 ccP1_1:	dc.w	3, -2,10, 1,24, 1,0, -1,0, 2			; or of tuples, (spd,cnt) tuples, X add
 ccP1_2:	dc.w	3, 1,40, -1,26, -2,0, 1,0, 4
-;ccP1_3:	dc.w	3, 1,0, 2,50, -1,0, -2,128, 2
 ccP1_3:	dc.w	3, 1,0, 2,50, -1,128, -2,64, 4
 
 ; ------------------------------------------
@@ -1420,7 +1462,7 @@ ccP2_2:	dc.w	7, 	1,0, -1,64, -1,128, 1,0						; or of tuples, (spd,cnt) tuples, 
 ; ------------------------------------------
 ; a1 - sin col tab
 ccMakeSinColorMap:
-		movem.l	d0-d7/a2-a5,-(sp)
+		movem.l	d0-d7/a2-a6,-(sp)
 		move.l	mem_bss_public(pc),a2
 		move.l	a2,a3
 		move.l	a2,a4
@@ -1445,7 +1487,7 @@ ccMakeSinColorMap:
 		add.b	d6,d2
 		move	d3,(a5)+
 		dbf		d7,.sl
-		movem.l	(sp)+,d0-d7/a2-a5
+		movem.l	(sp)+,d0-d7/a2-a6
 
 		rts
 
@@ -1453,7 +1495,6 @@ ccSinCols1:	dc.w	-4,0, 0,64*3, 6,0
 ccSinCols2:	dc.w	6,24, 2,24, -4,10
 ccSinCols3:	dc.w	2,0, 2,0, 2,0
 ccSinCols4:	dc.w	4,128, 0,0, 2,0
-;ccSinCols5:	dc.w	2,64, -2,32, 4,0
 ccSinCols5:	dc.w	2,64, -2,128, 4,0
 
 ; ------------------------------------------
@@ -1597,10 +1638,6 @@ ccInit:
 		move.l	#(COLOR01<<16)+BC_PURPLE,d2
 ;		move.l	#((CC_Y0*256+1)<<16)+$fffe,d5
 		move.l	#((CC_Y0*256+$21)<<16)+$fffe,d5			; row start wait
-		; move.l	#(BPLCON0<<16)+$1200,d3
-		; move.l	#(BPLCON0<<16)+$0200,d4
-		; move.l	#(COLOR03<<16)+BC_PURPLE,d3
-		; move.l	#(COLOR03<<16)+BC_PURPLE,d4
 		move.l	#(BPL1MOD<<16),d3
 		move	#-(CC_X),d3								; modulo at front of the line
 		move.l	#(COLOR03<<16)+BC_PURPLE,d4				; this is not necessary but left to avoid redoing some of the position calculations
@@ -1643,9 +1680,9 @@ ccSetScrPlasma:
 		move	d0,6(a1)
 		swap	d0
 		move	d0,2(a1)
-;		move	#-(CC_X),10(a1)			; modulo
 
 		bsr		ccSetModsPlasma
+		bsr		ccSetScrollPlasma
 		rts
 
 ; set row modulos for plasma
@@ -1658,9 +1695,22 @@ ccSetModsPlasma:
 		lea		copper_cc,a1
 		rts
 
+; reset plasma's scroll values
+ccSetScrollPlasma:
+		lea		copper_cc,a1
+		move	#$88,d0
+		move	#$aa,d1
+		moveq	#CC_Y*2-1,d7
+.bs:	
+		move	d0,10(a1)
+		move	d1,CC_ROWLEN*4+10(a1)
+		adda.l	#2*CC_ROWLEN*4,a1
+		dbf		d7,.bs
+		rts
+
 ; ------------------------------------------
-BANNER_X = 8*32					; keep is a multiple of 16
-BANNER_Y = BANNER_FNT_Y+2
+BANNER_X = 8*48					; characters. keep is a multiple of 16
+BANNER_Y = (BANNER_FNT_Y*2)+2
 BANNER_FNT_CHARS = 59
 BANNER_FNT_Y = 15
 BANNER_FNT_X = 16
@@ -1688,18 +1738,29 @@ bannerMove:
 		sub		d1,d0
 		bsr		ccSetModsBanner					; scroll Y jump
 
-		lea		bannerBufferAddr(pc),a1
-		subi	#1,bannerDelay-bannerBufferAddr(a1)
-		bne		.noX
-		move	#10,bannerDelay-bannerBufferAddr(a1)
-		move.l	(a1),d0
-		addi.l	#1,(a1)
-		bsr		ccSetScrBanner2
+
+		lea		bannerBufferAddr(pc),a2
+		move	bannerScrollCnt-bannerBufferAddr(a2),d0			; stop if whole scroll shown
+		bmi		.noX
+		move	bannerScroll-bannerBufferAddr(a2),d1
+		subi	#4,d1
+		bpl		.nm
+		addi	#16,d1
+
+		subi	#2,bannerScrollCnt-bannerBufferAddr(a2)			; decrease byte count
+		addi.l	#2,(a2)
+		move.l	(a2),d0
+		bsr		ccSetScrBanner2									; move address
+
+.nm:	move	d1,bannerScroll-bannerBufferAddr(a2)
+		move	d1,d0
+		bsr		bannerSetScroll									; smooth scroll update
 .noX:
 		rts
 
 bannerBufferAddr:	dc.l	0
-bannerDelay:		dc.w	4
+bannerScroll:		dc.w	$e
+bannerScrollCnt:	dc.w	BANNER_X-5*8			; bytes scrolled
 
 ; --------------
 ; a1 - text
@@ -1730,25 +1791,32 @@ bannerPrintText:
 		ori.b	#$04,d1
 .np2:
 		move.b	d1,(a5)+
+		ror.b	#2,d1
+		move.b	d1,BANNER_X-1(a5)
 		dbf		d6,.pCharX
-		adda.l	#BANNER_X,a3			; move to next buffer row
+
+		adda.l	#BANNER_X*2,a3			; move to next buffer row
 		adda.l	#BANNER_FNT_CHARS*2,a4	; move to next letter row
 		dbf		d7,.pCharY
 
-		suba.l	#BANNER_X*BANNER_FNT_Y-BANNER_FNT_X/2,a3		; move back to first row in buffer but start of new letter
+		suba.l	#BANNER_X*2*BANNER_FNT_Y-BANNER_FNT_X/2,a3		; move back to first row in buffer but start of new letter
 		bra		.parseTxt
 .endTxt:
 		rts
 
-bannerTxt1:		dc.b	"ABC COOL TEST ",0
+bannerTxt1:		dc.b	"    WARM GREETINGS TO THE WHOLE DEMOSCENE!      ",0
+
 		EVEN
 
 ; --------------
 ccSetScrBanner:
+		move.l	a2,-(sp)
 		move.l	mem_bss_chip(pc),d0
 		addi.l	#Banner_buffer,d0
 		lea		bannerBufferAddr(pc),a2
 		move.l	d0,(a2)							; save for later
+		move.l	(sp)+,a2
+; d0 - address
 ccSetScrBanner2:
 		lea		copper_cc_bpls,a1
 		move	d0,6(a1)
@@ -1760,8 +1828,9 @@ ccSetScrBanner2:
 ; set row modulos for bannner
 ; d0 - position from top (0-128 minus 68 (17*4) = 60)
 ccSetModsBanner:
+		movem.l	d0/d1/d7/a1,-(sp)
 		lea		copper_cc,a1
-		moveq	#127-BANNER_Y,d1
+		moveq	#127-(BANNER_FNT_Y)*4-1,d1
 		sub		d0,d1							; remaining rows (down)
 
 		move	d0,d7
@@ -1771,33 +1840,57 @@ ccSetModsBanner:
 		adda.l	#CC_ROWLEN*4,a1
 		dbf		d7,.up
 .noup:
-		moveq	#BANNER_Y-1,d7
-.mid:	move	#BANNER_X-CC_X,6(a1)
-		move	#-(CC_X),CC_ROWLEN*4+6(a1)
-		move	#-(CC_X),2*CC_ROWLEN*4+6(a1)
-		move	#-(CC_X),3*CC_ROWLEN*4+6(a1)
+		moveq	#(BANNER_FNT_Y)-1,d7
+.mid:	
+		move	#BANNER_X-CC_X,6(a1)
+		move	#BANNER_X-CC_X,CC_ROWLEN*4+6(a1)
+		move	#-(CC_X)-BANNER_X,2*CC_ROWLEN*4+6(a1)
+		move	#BANNER_X-CC_X,3*CC_ROWLEN*4+6(a1)
 		adda.l	#4*CC_ROWLEN*4,a1
 		dbf		d7,.mid
+
+		move	#BANNER_X-CC_X,6(a1)
+		adda.l	#CC_ROWLEN*4,a1
 
 .down:	move	#-(CC_X),6(a1)					; first row always loops back
 		adda.l	#CC_ROWLEN*4,a1
 		dbf		d1,.down
+		movem.l	(sp)+,d0/d1/d7/a1
+		rts
+
+; --------------
+; set scroll register for the banner
+; d0 - scroll 0-13
+bannerSetScroll:
+		movem.l	d0/d7/a1,-(sp)
+		lea		copper_cc,a1
+		moveq	#CC_Y*2-1,d7
+.bs:	
+		move	d0,10(a1)
+		move	d0,CC_ROWLEN*4+10(a1)
+		adda.l	#2*CC_ROWLEN*4,a1
+		dbf		d7,.bs
+		movem.l	(sp)+,d0/d7/a1
 		rts
 
 ; ------------------------------------------
 scrollMove:
 ;		movem.l	a1/d0,-(sp)
 		lea		copper_scroll_shift,a1
-		subi	#1,scroll_cnt-copper_scroll_shift(a1)
-		bmi.s	.smExit				; stop scroll once all shown
-		subi	#$11,2(a1)			; shift scroll
-		bpl.b	.smJump
-		move	#$ff,2(a1)
+		subi	#1,scroll_cnt-copper_scroll_shift(a1)		; check if whole scroll moved
+		bmi		.smExit				; stop scroll once all shown
+		; subi	#$11,2(a1)			; shift scroll (BPLCON1)
+		; bpl		.smJump
+		; move	#$ff,2(a1)
+		subi	#$22,2(a1)			; shift scroll (BPLCON1)
+		bpl		.smJump
+		move	#$ee,2(a1)
+
 		add		#2,10(a1)			; move addr
-		bne.s	.sm1
+		bne		.sm1
 		add		#1,6(a1)
 .sm1:	add		#2,10+8(a1)
-		bne.s	.smJump
+		bne		.smJump
 		add		#1,6+8(a1)
 .smJump:
 		lea		scroll_sin(pc),a1
@@ -2182,6 +2275,12 @@ fadeColorsIn:
 		move	d3,d7
 .wait:	bsr		vBlank
 		dbf		d7,.wait
+
+		move.l	transformColorsProc(pc),d7
+		beq		.nopr
+		move.l	d7,a1
+		jsr		(a1)
+.nopr:	
 		addq	#1,d0		; increase scaling factor
 		cmpi	#17,d0
 		bne.s	.loop
@@ -2206,6 +2305,12 @@ fadeColorsOut:
 		move	d3,d7
 .wait:	bsr		vBlank
 		dbf		d7,.wait
+
+		move.l	transformColorsProc(pc),d7
+		beq		.nopr
+		move.l	d7,a1
+		jsr		(a1)
+.nopr:	
 		dbf		d0,.loop	; decrease scaling factor, last run will be with 0
 		movem.l	(sp)+,a1/a2
 		movem.l	(sp)+,ALL
@@ -2267,16 +2372,23 @@ transformColors:
 		lea		CUSTOM,a0
 		movem.l	a1/a2/a3/d0,-(sp)
 		moveq	#0,d0		; scaling factor
-.loop:	movem.l	(sp),a1/a2/a3/d7
+.loop:	movem.l	(sp),a1/a2/a3/d7		; copies d0 into d7
 		bsr.s	scaleColorsDiff
 .wait:	bsr		vBlank
 		dbf		d7,.wait
-		addq	#1,d0		; increase scaling factor
+
+		move.l	transformColorsProc(pc),d7
+		beq		.nopr
+		move.l	d7,a1
+		jsr		(a1)
+.nopr:	addq	#1,d0		; increase scaling factor
 		cmpi	#17,d0
 		bne.s	.loop
 		movem.l	(sp)+,a1/a2/a3/d0
 		movem.l	(sp)+,ALL
 		rts
+
+transformColorsProc:	dc.l	0
 
 ; a1 - copper colour list
 ; a2 - source colour tab preceded by length
@@ -2413,7 +2525,7 @@ endPart:
 
 		lea		copper_blank_black,a1
 		move.l	a1,COP2LC(a0)
-		WAIT	50
+		WAIT	90
 		rts
 
 
@@ -2528,7 +2640,8 @@ copper_blank_purple:
 ; ----------- Eire screen copperlist
 copper_eire:
 		dc.w	BPLCON0, $0200  										 ; 0 bitplanes
-		dc.w	DIWSTRT, $6Ce1, DIWSTOP, $0061
+;		dc.w	DIWSTRT, $6Ce1, DIWSTOP, $0061
+		dc.w	DIWSTRT, $2C81, DIWSTOP, $2cC1
 		dc.w	DDFSTRT, $0068, DDFSTOP, $00a0
 copper_eire_logo_cols:
 		dc.w	COLOR00,0,COLOR01,0,COLOR02,0,COLOR03,0,COLOR04,0,COLOR05,0,COLOR06,0,COLOR07,0
@@ -2536,10 +2649,9 @@ copper_eire_logo_cols:
 		dc.w	BPL1MOD,(EIRE_SIZE_X/8)*(EIRE_BPL-1),BPL2MOD,(EIRE_SIZE_X/8)*(EIRE_BPL-1)
 copper_eire_logo_bpls:
 		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0,BPL3PTH,0,BPL3PTL,0,BPL4PTH,0,BPL4PTL,0
-		dc.w	$6c01,$fffe
-		dc.w	BPLCON0, $4200
-		dc.w	$cc01,$fffe
-		dc.w	BPLCON0, $0200
+copper_eire_logo_bplcon:
+		dc.w	$8c01,$fffe, BPLCON0, $4200
+		dc.w	$ec01,$fffe, BPLCON0, $0200
 		dc.l	-2
 
 ; ----------- L systems copperlist
@@ -2562,7 +2674,7 @@ copper_lsys_bpls:
 
 ; ----------- Scroll screen copperlist
 BC_PURPLE = $313
-scroll_cnt:		dc.w	(SCROLL_LEN-44)*8
+scroll_cnt:		dc.w	(SCROLL_LEN-44)*4
 copper_scroll:
 		dc.w	BPLCON0, $0200, BPLCON1, $0000							 ; 0 bitplanes, no scroll
 		dc.w	DIWSTRT, $2C81, DIWSTOP, $1EC1
@@ -2573,6 +2685,7 @@ copper_scroll_logo_cols:
 		dc.w	BPL1MOD,(LOGO_SIZE_X/8)*(LOGO_BPL-1),BPL2MOD,(LOGO_SIZE_X/8)*(LOGO_BPL-1)
 copper_scroll_logo_bpls:
 		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0,BPL3PTH,0,BPL3PTL,0,BPL4PTH,0,BPL4PTL,0
+copper_scroll_logo_bplcon:
 		dc.w	$3001,$fffe, BPLCON0, $4200
 		dc.w	$7001,$fffe, BPLCON0, $0200
 
@@ -2727,9 +2840,9 @@ BSS_CHIP_ALLOC_MAX set BSS_CHIP_2
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_3	
 	endif
 
-	echo 		"BSS 1: ", BSS_CHIP_1
-	echo 		"BSS 2: ", BSS_CHIP_2
-	echo 		"BSS 3: ", BSS_CHIP_3
+	echo 		"BSS CHIP 1: ", BSS_CHIP_1
+	echo 		"BSS CHIP 2: ", BSS_CHIP_2
+	echo 		"BSS CHIP 3: ", BSS_CHIP_3
 
 	ds.b		BSS_CHIP_ALLOC_MAX
 
@@ -2759,8 +2872,8 @@ mbp:
 	CC_sinColMap:				rs.w	CC_SIN_COL_LEN
 	BSS_PUBLIC_2:				rs.w	0
 
-	echo	"p1: ", BSS_PUBLIC_1
-	echo	"p2: ", BSS_PUBLIC_2
+	echo	"BSS PUB 1: ", BSS_PUBLIC_1
+	echo	"BSS PUB 2: ", BSS_PUBLIC_2
 
 BSS_PUBLIC_ALLOC_MAX set BSS_PUBLIC_1
 	ifgt BSS_PUBLIC_2-BSS_PUBLIC_ALLOC_MAX
