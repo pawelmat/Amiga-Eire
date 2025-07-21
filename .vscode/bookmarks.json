@@ -5,67 +5,47 @@
 			"bookmarks": [
 				{
 					"line": 60,
+					"column": 3,
+					"label": ""
+				},
+				{
+					"line": 223,
 					"column": 0,
 					"label": ""
 				},
 				{
-					"line": 132,
-					"column": 5,
+					"line": 264,
+					"column": 0,
 					"label": ""
 				},
 				{
-					"line": 252,
-					"column": 6,
+					"line": 335,
+					"column": 0,
 					"label": ""
 				},
 				{
-					"line": 322,
-					"column": 5,
+					"line": 375,
+					"column": 0,
 					"label": ""
 				},
 				{
-					"line": 1106,
+					"line": 569,
+					"column": 11,
+					"label": ""
+				},
+				{
+					"line": 1255,
 					"column": 8,
 					"label": ""
 				},
 				{
-					"line": 1166,
-					"column": 7,
+					"line": 2809,
+					"column": 6,
 					"label": ""
 				},
 				{
-					"line": 1240,
+					"line": 2881,
 					"column": 4,
-					"label": ""
-				},
-				{
-					"line": 1632,
-					"column": 3,
-					"label": ""
-				},
-				{
-					"line": 1717,
-					"column": 3,
-					"label": ""
-				},
-				{
-					"line": 1766,
-					"column": 10,
-					"label": ""
-				},
-				{
-					"line": 1876,
-					"column": 5,
-					"label": ""
-				},
-				{
-					"line": 2640,
-					"column": 7,
-					"label": ""
-				},
-				{
-					"line": 2701,
-					"column": 3,
 					"label": ""
 				}
 			]

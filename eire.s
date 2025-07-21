@@ -1,6 +1,6 @@
 ; Eire - 40k intro for the Boom 2025 party, Tuchola, Poland
 ; Pawel Matusz (Kane/Suspect) 
-; 25/06/2025 - 20/07/2025
+; 25/06/2025 - 20/07/2025 Luton/UK - San Diego/US
 
     TTL         "Eire"
 
@@ -120,7 +120,7 @@ interruptL3Copper:
 		addq.w	#1,beat-sl(a1)				; count beats (absolute counter)
 		addq.w	#1,beat_relative-sl(a1)		; count beats (relative counter)
 		addi	#MUS_TPB,beat_next-sl(a1)	; move to next beat
-		move	beat-sl(a1),beat_strobe-sl(a1)
+		move	beat-sl(a1),beat_strobe-sl(a1)		; move the actual beat nr into the strobe signal
 .noBeat:
 		addq	#1,tick_cnt-sl(a1)			; increase tick (frame) counter
 		movem.l	(sp)+,d0-d2/a0-a6
@@ -220,13 +220,20 @@ setMusicPos:
 		movem.l	(sp)+,ALL
 		rts
 
-; d0 - delay after strobe
+; d0 - expected beat (-1: does not matter)
 syncToStrobe:
+		move	d1,-(sp)
 		lea		beat_strobe(pc),a1
-.noStr:	tst		(a1)
+.noStr:	move	(a1),d1					; actual beat number
 		beq.s	.noStr
-.delay:	VBLANKS
-		dbf		d0,.delay
+		tst		d0
+		bmi		.exit
+		cmp		d0,d1
+		bge		.exit					; move on if beat greater or equal to requested
+		clr		(a1)					; clear beat
+		bra		.noStr
+.exit:
+		move	(sp)+,d1
 		rts
 
 ; just reset the relative beat for local counting
@@ -236,15 +243,20 @@ resetRelativeBeat:
 		rts
 
 vBlank:
-		VBLANKS
+.v1:	cmp.b   #$ff,$dff006
+		bne.s   .v1
+.v2:	cmp.b   #$ff,$dff006
+		beq.s   .v2
 		rts
 
 vWait:			; d0 - frames
-		cmp.b     #$ff,6(a0)
-		bne.s     *-6
-		cmp.b     #$ff,6(a0)
-		beq.s     *-6
-		dbf       d0,vWait
+		move.l	d0,-(sp)
+.v1:	cmp.b   #$ff,$dff006
+		bne.s   .v1
+.v2:	cmp.b   #$ff,$dff006
+		beq.s   .v2
+		dbf     d0,.v1
+		move.l	(sp)+,d0
 		rts
 ;-----------------------------------------------------------------------
 ;-----------------------------------------------------------------------
@@ -259,7 +271,8 @@ swipeScreenPart:
 		lea		Copper_start_wait_addr(a1),a3
 		lea		(a2),a5
 		; move.l	#$2039fffe,d0
-		move.l	#$2001fffe,d0
+		; move.l	#$2001fffe,d0
+		move.l	#$2011fffe,d0
 		move.l	#(COLOR00<<16),d1
 		move.l	#$208ffffe,d2
 		move.l	#(COLOR00<<16),d3
@@ -322,7 +335,8 @@ swipeScreenPart:
 ;-----------------------------------------------------------------------
 eirePart:
 		lea		CUSTOM,a0
-		WAIT	10
+		moveq	#10,d0		; this can be used for any pre-calc
+		bsr		vWait
 
 		lea		logo_Eire,a1
 		lea		copper_eire_logo_bpls,a2
@@ -334,31 +348,137 @@ eirePart:
 		move.l	a2,COP2LC(a0)
 		bsr		vBlank
 
-		lea		transformColorsProc(pc),a1	; slide logo up proc
-		lea		eireTransformProc(pc),a2
-		move.l	a2,(a1)
+		moveq	#1,d0
+		bsr		syncToStrobe						; sync to first strobe
+		bsr		resetRelativeBeat
+		; lea		eirePlaySequence(pc),a1			; scroll move procedure to be called from the L3 int
+		; bsr		intL3ProcSet
+		move	tick_cnt(pc),d0
+		move	beat_next(pc),d1
+		nop
 
-		lea		copper_eire_logo_cols,a1
-		lea		logo_eire_palette(pc),a2
-		moveq	#2,d0
-		bsr		fadeColorsIn
+eireMainLoop:
+		bsr		vBlank
+		bsr		eirePlaySequence
 
-		WAIT	210
+		move	eireFinished(pc),d0
+		beq		eireMainLoop
 
-		bsr		fadeColorsOut
-		lea		transformColorsProc(pc),a1	; remove proc
-		clr.l	(a1)
+
+	; check if we are within ticks limit
+	move	tick_cnt(pc),d0
+	move	beat_next(pc),d1
+	nop
 
 		rts
 
+;-------------------------------
+eirePlaySequence:
+		movem.l	ALL,-(sp)
 
+		move	beat_relative(pc),d0
+		subq.w	#3,d0					; 16*3 cycles accurate
+		bpl		.part2
+		bsr		eireFadeColorsIn
+		bra		.exit
+;------- wait
+.part2:
+		subi.w	#8,d0
+		bpl		.part3
+		; bsr		eireLogoJump
+		bra		.exit
+;------- fade out
+.part3:
+		subq.w	#2,d0
+		bpl		.part4
+		bsr		eireFadeColorsOut
+		bra		.exit
+;------- finished
+.part4:
+		lea		eireFinished(pc),a1
+		st		(a1)
+.exit:
+		movem.l	(sp)+,ALL
+		rts
+
+eireFinished:	dc.w	0					; part finished flag
+
+;-------------------------------
+; d0 - rows to move up
 eireTransformProc:
 		move.l	a1,-(sp)
 		lea		copper_eire_logo_bplcon,a1
-		subi.b	#2,(a1)						; slide logo up
-		subi.b	#2,8(a1)
+		sub.b	d0,(a1)						; slide logo up
+		sub.b	d0,8(a1)
 		move.l	(sp)+,a1
 		rts
+
+; eireLogoJump:
+; 		movem.l	d0/d1/a1,-(sp)
+; 		lea		.logoJumpIndex(pc),a1
+; 		move	(a1),d1				; counter 23..0
+; 		subq	#2,d1
+; 		bpl.s	.sm2
+; 		move	#2*MUS_TPB-1,d1
+; .sm2:	move	d1,(a1)
+
+; 		lea		scroll_sin+1(pc),a1
+; 		move	#EIRE_LOGO_Y0+2,d0			; base y position
+; 		sub.b	(a1,d1.w),d0				; sin value
+; 		lea		copper_eire_logo_bplcon,a1
+; 		move.b	d0,(a1)						; new logo y
+; 		addi.b	#EIRE_LOGO_Y1-EIRE_LOGO_Y0,d0
+; 		move.b	d0,8(a1)
+; 		movem.l	(sp)+,d0/d1/a1
+; 		rts
+
+; .logoJumpIndex:		dc.w	MUS_TPB*2
+
+eireFadeColorsIn:
+		movem.l	ALL,-(sp)
+		lea		copper_eire_logo_cols,a1
+		lea		logo_eire_palette(pc),a2
+		lea		.eDelay(pc),a3		; run every nth frame
+		subi	#1,(a3)
+		bpl		.exit
+		move	#2,(a3)
+		lea		.eScalingFact(pc),a3
+		move	(a3),d0
+		cmpi	#17,d0
+		beq		.exit
+		addi	#1,(a3)
+		bsr		scaleColors
+		moveq	#2,d0
+		bsr		eireTransformProc
+.exit:
+		movem.l	(sp)+,ALL
+		rts
+
+.eScalingFact:	dc.w	0
+.eDelay:		dc.w	2
+
+eireFadeColorsOut:
+		movem.l	ALL,-(sp)
+		lea		copper_eire_logo_cols,a1
+		lea		logo_eire_palette(pc),a2
+		lea		.eDelay(pc),a3		; run every nth frame
+		subi	#1,(a3)
+		bpl		.exit
+		move	#2,(a3)
+		lea		.eScalingFact(pc),a3
+		move	(a3),d0
+		bmi		.exit
+		subi	#1,(a3)
+		bsr		scaleColors
+		moveq	#2,d0
+		bsr		eireTransformProc
+.exit:
+		movem.l	(sp)+,ALL
+		rts
+
+.eScalingFact:	dc.w	16
+.eDelay:		dc.w	2
+
 
 ;-----------------------------------------------------------------------
 ;-----------------------------------------------------------------------
@@ -427,7 +547,12 @@ lsystemPart:
 		lea		lsys_p2(pc),a3
 		bsr		lsysCalcBobs
 
-		moveq	#0,d0							; no delay after strobe
+		; check if we are within ticks limit
+		move	tick_cnt(pc),d0
+		move	beat_next(pc),d1
+		nop
+
+		moveq	#$14,d0							; wait until beat $13
 		bsr		syncToStrobe					; sync beat counter to next beat
 		bsr		resetRelativeBeat
 
@@ -463,7 +588,7 @@ lsysPlaySequence1:
 		clr.b	flash_cnt-parts_state(a6)
 .noFlashClr:
 
-LSYS_START_BEAT = 9
+LSYS_START_BEAT = 8
 ;	move #$f00,COLOR00(a0)
 		move	beat_relative(pc),d0
 		cmpi	#LSYS_START_BEAT,d0
@@ -505,19 +630,27 @@ lsysPlaySequence2:
 		subi	#LSYS_START_BEAT+8,d0
 		bpl		.part3		
 		tst.b	(a6)
-;		bne.s	.p2main
-		bne.s	.p3main
+		bne.s	.p2main
+;		bne.s	.p3main
 		st		(a6)
 		move.l	mem_bss_public(pc),a1			; part 2 init - do only once
 		adda.l	#LS_bobs_tab1,a1
 		move.l	a1,lsys_Bob_Tab_Ptr-parts_state(a6)							; start from the beginning of the bobs table
 		bsr		.flashWhite
-		bra		.p3main
-; .p2main:
-; 		bsr		lsysSwitchScreens
-; 		bsr		.sinZoom
-; 		bsr		lsysRotateBobs
-; 		bra		.exit
+;		bra		.p3main
+		bra		.noS2
+.p2main:
+		tst		beat_strobe-parts_state(a6)
+		beq		.noS1
+		move	#$fff,d1
+		move	#$0dbb,d2
+		move	#15*4+2,d3
+		bsr		lsysFlashCol
+.noS1:
+		bsr		lsysSwitchScreens
+		bsr		.sinZoom
+		bsr		lsysRotateBobs
+		bra		.exit
 
 ;--------
 .part3:
@@ -641,9 +774,10 @@ lsysPlaySequence2:
 		; bsr		lsysRotateBobs
 		; bra		.exit
 
-;--------
+;-------- filled move around
 .part8:
-		subi	#8,d0
+		; subi	#8,d0
+		subi	#10,d0
 		; cmp		#LSYS_START_BEAT+8+8+8+8+8+8+8,d0
 		bpl		.part9
 		tst.b	6(a6)
@@ -664,14 +798,14 @@ lsysPlaySequence2:
 		; bsr		lsysRotateBobs
 		; bra		.exit
 
-;--------  $0c98 d77
+;--------  fade bobs
 .part9:
 		subi	#2,d0
 		; cmp		#LSYS_START_BEAT+8+8+8+8+8+8+8+4,d0
 		bpl		.finished
 		subi.b	#1,7(a6)
 		bne		.noB
-		move.b	#4,7(a6)
+		move.b	#3,7(a6)
 		lea		bobs,a1
 		moveq	#15,d7
 		moveq	#0,d6
@@ -1091,14 +1225,29 @@ scrollPart:
 		move.l	a2,COP2LC(a0)
 		bsr		vBlank
 
+		lea		transformColorsProc(pc),a1
+		lea		logoTransformProc1(pc),a2					; slide logo up proc
+		move.l	a2,(a1)
+
 		lea		copper_scroll_logo_cols,a1					; show first logo
 		lea		base_purple_palette_16(pc),a2
 		lea		logo_suspect_palette(pc),a3
 		moveq	#2,d0
 		bsr		transformColors
 
-		moveq	#1,d0
-		bsr		syncToStrobe				; sync next action to strobe (music beat)
+		lea		transformColorsProc(pc),a1					; remove proc
+		clr.l	(a1)
+		lea     copper_scroll_logo_tempend,a1				; remove -2 from temp position in copper
+		move.l	#(COLOR01<<16)+BC_PURPLE,(a1)
+
+	; REMOVE - this is for debug only
+	move	#-1,d0
+	lea		logo_trans_frames(pc),a5
+	move.l	(a5),d1
+	beq		.deb
+		moveq	#$57,d0						; wait for strobe $57
+.deb:	bsr		syncToStrobe				; sync next action to strobe (music beat)
+		bsr		vBlank
 		bsr		resetRelativeBeat
 		lea		scrollMove(pc),a1			; scroll move procedure to be called from the L3 int
 		bsr		intL3ProcSet
@@ -1113,10 +1262,6 @@ scrollPart:
 		move	music_ticks_left-sl(a1),d0
 		cmpi	#255,d0
 		bgt		.mainLoopScroll
-		; beq		.exit
-
-		; btst.b  #6,CIAA
-        ; bne	    .mainLoopScroll
 
 .exit:
 		bsr		vBlank
@@ -1133,7 +1278,7 @@ scrollPart:
 		bsr		intL3ProcSet
 
 		lea		transformColorsProc(pc),a1	; slide logo up proc
-		lea		logoTransformProc(pc),a2
+		lea		logoTransformProc2(pc),a2
 		move.l	a2,(a1)
 
 
@@ -1142,6 +1287,7 @@ scrollPart:
 		lea		base_purple_palette_16(pc),a3
 		moveq	#1,d0
 		bsr		transformColors
+
 		lea		transformColorsProc(pc),a1	; remove proc
 		clr.l	(a1)
 
@@ -1153,7 +1299,15 @@ scrollPart:
 
 		rts
 
-logoTransformProc:
+logoTransformProc1:
+		move.l	a1,-(sp)
+		lea		copper_scroll_logo_bplcon,a1
+		subi.b	#2,(a1)						; slide logo up
+		subi.b	#2,8(a1)
+		move.l	(sp)+,a1
+		rts
+
+logoTransformProc2:
 		move.l	a1,-(sp)
 		lea		copper_scroll_logo_bplcon,a1
 		addi.b	#2,(a1)						; slide logo up
@@ -1905,12 +2059,22 @@ scrollMove:
 		move.b	d0,scroll_sin_last_val-scroll_sin-1(a1)		; same scroll sin value for reuse by the banner
 
 		lea		copper_scroll_ypos,a1
-		.FOFS:	SET 0
-		REPT	5
+		move.b	d0,(a1)
+		addq	#3,d0
+		.FOFS:	SET 8
+		REPT	4
 		move.b	d0,.FOFS(a1)
 		addq	#3,d0
-		.FOFS:	SET .FOFS+8
+		.FOFS:	SET .FOFS+16
 		ENDR
+
+		; lea		copper_scroll_ypos,a1
+		; .FOFS:	SET 0
+		; REPT	5
+		; move.b	d0,.FOFS(a1)
+		; addq	#3,d0
+		; .FOFS:	SET .FOFS+8
+		; ENDR
 .smExit:
 ;		movem.l	(sp)+,a1/d0
 		rts
@@ -2450,7 +2614,8 @@ endPart:
 		lea		CUSTOM,a0
 		lea		copper_blank_purple,a1
 		move.l	a1,COP2LC(a0)
-		WAIT	24
+		moveq	#24,d0
+		bsr		vWait
 
 		move.l	mem_bss_chip(pc),a6
 		move.l	a6,d0
@@ -2495,7 +2660,8 @@ endPart:
 		lea		.offsets(pc),a2
 		lea		.cols(pc),a3
 .shrink1:
-		WAIT	1
+		bsr		vBlank
+		bsr		vBlank
 		move.b	(a2)+,d0
 		bmi.s	.shEnd1
 		move	#ENDPART_MIDSCR,d1
@@ -2511,7 +2677,8 @@ endPart:
 
 		move	#111,d0							; shrink to dot
 .shrink2:
-		WAIT	1
+		bsr		vBlank
+		bsr		vBlank
 		move	#136,d1
 		move	d1,d2
 		sub		d0,d1
@@ -2525,7 +2692,9 @@ endPart:
 
 		lea		copper_blank_black,a1
 		move.l	a1,COP2LC(a0)
-		WAIT	90
+
+		moveq	#90,d0
+		bsr		vWait
 		rts
 
 
@@ -2649,9 +2818,16 @@ copper_eire_logo_cols:
 		dc.w	BPL1MOD,(EIRE_SIZE_X/8)*(EIRE_BPL-1),BPL2MOD,(EIRE_SIZE_X/8)*(EIRE_BPL-1)
 copper_eire_logo_bpls:
 		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0,BPL3PTH,0,BPL3PTL,0,BPL4PTH,0,BPL4PTL,0
+
+EIRE_LOGO_Y0 = $4a
+EIRE_LOGO_Y1 = $aa		; $60 high picture
 copper_eire_logo_bplcon:
-		dc.w	$8c01,$fffe, BPLCON0, $4200
-		dc.w	$ec01,$fffe, BPLCON0, $0200
+		dc.w	(EIRE_LOGO_Y0+$22)<<8+$01,$fffe, BPLCON0, $4200
+		dc.w	(EIRE_LOGO_Y1+$22)<<8+$01,$fffe, BPLCON0, $0200
+		; dc.w	$6c01,$fffe, BPLCON0, $4200
+		; dc.w	$cc01,$fffe, BPLCON0, $0200
+		; dc.w	$8c01,$fffe, BPLCON0, $4200
+		; dc.w	$ec01,$fffe, BPLCON0, $0200
 		dc.l	-2
 
 ; ----------- L systems copperlist
@@ -2686,8 +2862,12 @@ copper_scroll_logo_cols:
 copper_scroll_logo_bpls:
 		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0,BPL3PTH,0,BPL3PTL,0,BPL4PTH,0,BPL4PTL,0
 copper_scroll_logo_bplcon:
-		dc.w	$3001,$fffe, BPLCON0, $4200
-		dc.w	$7001,$fffe, BPLCON0, $0200
+		dc.w	$5001,$fffe, BPLCON0, $4200
+		dc.w	$9001,$fffe, BPLCON0, $0200
+		; dc.w	$3001,$fffe, BPLCON0, $4200
+		; dc.w	$7001,$fffe, BPLCON0, $0200
+copper_scroll_logo_tempend:
+		dc.l	-2
 
 CC_Y_REPS = 4
 CC_Y0 = $78
@@ -2711,16 +2891,20 @@ copper_cc_end:
 		dc.w	BPL2MOD,2*SCROLL_LEN-40
 		dc.w	DIWSTRT, $2C91, DIWSTOP, $1EB1
 		dc.w	DDFSTRT, $0038, DDFSTOP, $00D0
-		dc.w	COLOR01,$0b9b,COLOR02,$0444,COLOR03,$0cac
+		dc.w	COLOR01,$057b,COLOR02,$0237,COLOR03,$08ad
+		; dc.w	COLOR01,$0b9b,COLOR02,$0444,COLOR03,$0cac
 copper_scroll_shift:
 		dc.w	BPLCON1, $0000
 copper_scroll_bpls:
 		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0
 copper_scroll_ypos:
 		dc.w	$1101,$fffe, BPLCON0, $2200
-		dc.w	$1401,$fffe, COLOR03,$0dbd
-		dc.w	$1701,$fffe, COLOR03,$0ece
-		dc.w	$1A01,$fffe, COLOR03,$0fdf
+		dc.w	$1401,$fffe, COLOR01,$078c,COLOR02,$0448,COLOR03,$0abe
+		dc.w	$1701,$fffe, COLOR01,$0874,COLOR02,$0653,COLOR03,$0a95
+		dc.w	$1A01,$fffe, COLOR01,$0763,COLOR02,$0542,COLOR03,$0984
+		; dc.w	$1401,$fffe, COLOR03,$0dbd
+		; dc.w	$1701,$fffe, COLOR03,$0ece
+		; dc.w	$1A01,$fffe, COLOR03,$0fdf
 		dc.w	$1d01,$fffe, BPLCON0, $0200
 		dc.l	-2
 
