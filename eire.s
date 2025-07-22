@@ -335,9 +335,6 @@ swipeScreenPart:
 ;-----------------------------------------------------------------------
 eirePart:
 		lea		CUSTOM,a0
-		moveq	#10,d0		; this can be used for any pre-calc
-		bsr		vWait
-
 		lea		logo_Eire,a1
 		lea		copper_eire_logo_bpls,a2
 		moveq	#EIRE_BPL-1,d0
@@ -351,19 +348,17 @@ eirePart:
 		moveq	#1,d0
 		bsr		syncToStrobe						; sync to first strobe
 		bsr		resetRelativeBeat
-		; lea		eirePlaySequence(pc),a1			; scroll move procedure to be called from the L3 int
-		; bsr		intL3ProcSet
-		move	tick_cnt(pc),d0
-		move	beat_next(pc),d1
-		nop
+		lea		eirePlaySequence(pc),a1			; scroll move procedure to be called from the L3 int
+		bsr		intL3ProcSet
 
 eireMainLoop:
 		bsr		vBlank
-		bsr		eirePlaySequence
+		; bsr		eirePlaySequence
 
 		move	eireFinished(pc),d0
 		beq		eireMainLoop
 
+		bsr		intL3ProcClear				; remove L3 int proc
 
 	; check if we are within ticks limit
 	move	tick_cnt(pc),d0
@@ -478,6 +473,9 @@ eireFadeColorsOut:
 
 .eScalingFact:	dc.w	16
 .eDelay:		dc.w	2
+
+;-------------------------------
+
 
 
 ;-----------------------------------------------------------------------
@@ -1316,7 +1314,7 @@ logoTransformProc2:
 		rts
 
 ; ------------------------------------------
-CC_START_BEAT = 16
+CC_START_BEAT = 18
 ;CC_START_BEAT = 2
 ccSequencePlay:
 		lea		cc_parts_state(pc),a6				; init etc. state
@@ -1335,7 +1333,7 @@ ccSequencePlay:
 		bra		.exit
 ;------- straight plasma 2
 .part2:
-		subi	#16,d0
+		subi	#18,d0
 		bpl		.part2b
 		lea		ccSinCols2(pc),a1
 		addi.b	#2,3(a1)
@@ -2036,7 +2034,7 @@ scrollMove:
 		; subi	#$11,2(a1)			; shift scroll (BPLCON1)
 		; bpl		.smJump
 		; move	#$ff,2(a1)
-		subi	#$22,2(a1)			; shift scroll (BPLCON1)
+		subi	#$22,2(a1)			; shift scroll (BPLCON1) - speed x2
 		bpl		.smJump
 		move	#$ee,2(a1)
 
@@ -2891,7 +2889,12 @@ copper_cc_end:
 		dc.w	BPL2MOD,2*SCROLL_LEN-40
 		dc.w	DIWSTRT, $2C91, DIWSTOP, $1EB1
 		dc.w	DDFSTRT, $0038, DDFSTOP, $00D0
+
+		; gold on top
+		; dc.w	COLOR01,$0763,COLOR02,$0542,COLOR03,$0984
+		; blue on top
 		dc.w	COLOR01,$057b,COLOR02,$0237,COLOR03,$08ad
+		; grey
 		; dc.w	COLOR01,$0b9b,COLOR02,$0444,COLOR03,$0cac
 copper_scroll_shift:
 		dc.w	BPLCON1, $0000
@@ -2899,9 +2902,21 @@ copper_scroll_bpls:
 		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0
 copper_scroll_ypos:
 		dc.w	$1101,$fffe, BPLCON0, $2200
-		dc.w	$1401,$fffe, COLOR01,$078c,COLOR02,$0448,COLOR03,$0abe
-		dc.w	$1701,$fffe, COLOR01,$0874,COLOR02,$0653,COLOR03,$0a95
-		dc.w	$1A01,$fffe, COLOR01,$0763,COLOR02,$0542,COLOR03,$0984
+		dc.w	$1401,$fffe
+
+		; gold on top
+		; dc.w	COLOR01,$0874,COLOR02,$0653,COLOR03,$0a95
+		; dc.w	$1701,$fffe
+		; dc.w	COLOR01,$078c,COLOR02,$0448,COLOR03,$0abe
+		; dc.w	$1A01,$fffe
+		; dc.w	COLOR01,$057b,COLOR02,$0237,COLOR03,$08ad
+		; bue on top
+		dc.w	COLOR01,$078c,COLOR02,$0448,COLOR03,$0abe
+		dc.w	$1701,$fffe
+		dc.w	COLOR01,$0874,COLOR02,$0653,COLOR03,$0a95
+		dc.w	$1A01,$fffe
+		dc.w	COLOR01,$0763,COLOR02,$0542,COLOR03,$0984
+		; grey
 		; dc.w	$1401,$fffe, COLOR03,$0dbd
 		; dc.w	$1701,$fffe, COLOR03,$0ece
 		; dc.w	$1A01,$fffe, COLOR03,$0fdf
