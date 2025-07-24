@@ -353,6 +353,8 @@ eirePart:
 		move.l	a2,COP2LC(a0)
 		bsr		vBlank
 
+		bsr		eireCreateFadecolTab
+
 		moveq	#1,d0
 		bsr		syncToStrobe					; sync to first strobe
 		bsr		resetRelativeBeat
@@ -377,9 +379,9 @@ eireMainLoop:
 		bsr		intL3ProcClear				; remove L3 int proc
 
 	; check if we are within ticks limit
-	move	tick_cnt(pc),d0
-	move	beat_next(pc),d1
-	nop
+	; move	tick_cnt(pc),d0
+	; move	beat_next(pc),d1
+	; nop
 
 		rts
 
@@ -390,7 +392,9 @@ eirePlaySequence:
 		move	beat_relative(pc),d0
 		subq.w	#3,d0					; 16*3 cycles accurate
 		bpl		.part2
+;	move #$f00,$dff180
 		bsr		eireFadeColorsIn
+;	move #$00f,$dff180
 		bra		.exit
 ;------- wait
 .part2:
@@ -445,10 +449,26 @@ eireTransformProc:
 
 ; .logoJumpIndex:		dc.w	MUS_TPB*2
 
-eireFadeColorsIn:
+; create a pre-calculated fading table for the logo to avoid wasting time in the VBL
+eireCreateFadecolTab:
 		movem.l	ALL,-(sp)
-		lea		copper_eire_logo_cols,a1
+		moveq	#0,d0
+.makeTab:
+		move.l	mem_bss_chip(pc),a1
+		adda.l	#Eire_fadecol_table,a1
+		move	d0,d1
+		lsl		#6,d1							; table position based on fading index (16 long words)
+		lea		(a1,d1.w),a1
 		lea		logo_eire_palette(pc),a2
+		bsr		scaleColors
+		addq	#1,d0
+		cmpi	#17,d0
+		bne		.makeTab
+		movem.l	(sp)+,ALL
+		rts
+
+
+eireFadeColorsIn:
 		lea		.eDelay(pc),a3		; run every nth frame
 		subi	#1,(a3)
 		bpl		.exit
@@ -458,20 +478,28 @@ eireFadeColorsIn:
 		cmpi	#17,d0
 		beq		.exit
 		addi	#1,(a3)
-		bsr		scaleColors
+
+		move.l	mem_bss_chip(pc),a1
+		adda.l	#Eire_fadecol_table,a1
+		lsl		#6,d0							; table position based on fading index (16 long words)
+		lea		(a1,d0.w),a1
+		lea		copper_eire_logo_cols,a2
+		moveq	#EIRE_COLS-1,d1					; copy pre-calced fading colours
+.cpCols:
+		move	2(a1),2(a2)
+		lea		4(a1),a1
+		lea		4(a2),a2
+		dbf		d1,.cpCols
+
 		moveq	#2,d0
 		bsr		eireTransformProc
 .exit:
-		movem.l	(sp)+,ALL
 		rts
 
 .eScalingFact:	dc.w	0
 .eDelay:		dc.w	2
 
 eireFadeColorsOut:
-		movem.l	ALL,-(sp)
-		lea		copper_eire_logo_cols,a1
-		lea		logo_eire_palette(pc),a2
 		lea		.eDelay(pc),a3		; run every nth frame
 		subi	#1,(a3)
 		bpl		.exit
@@ -480,11 +508,21 @@ eireFadeColorsOut:
 		move	(a3),d0
 		bmi		.exit
 		subi	#1,(a3)
-		bsr		scaleColors
+
+		move.l	mem_bss_chip(pc),a1
+		adda.l	#Eire_fadecol_table,a1
+		lsl		#6,d0							; table position based on fading index (16 long words)
+		lea		(a1,d0.w),a1
+		lea		copper_eire_logo_cols,a2
+		moveq	#EIRE_COLS-1,d1					; copy pre-calced fading colours
+.cpCols:
+		move	2(a1),2(a2)
+		lea		4(a1),a1
+		lea		4(a2),a2
+		dbf		d1,.cpCols
 		moveq	#2,d0
 		bsr		eireTransformProc
 .exit:
-		movem.l	(sp)+,ALL
 		rts
 
 .eScalingFact:	dc.w	16
@@ -3506,6 +3544,7 @@ LS_Screen1 = Logo_screen1
 	BSS_CHIP_3:					rs.w	0
 
 	RSRESET
+	Eire_fadecol_table:			rs.l	EIRE_COLS*18
 	Eire_cred_line_1:			rs.b	EIRE_CRED_W*EIRE_CRED_H
 	Eire_cred_line_2:			rs.b	EIRE_CRED_W*EIRE_CRED_H
 	Eire_cred_line_3:			rs.b	EIRE_CRED_W*EIRE_CRED_H
