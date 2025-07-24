@@ -1,6 +1,6 @@
-; Eire - 40k intro for the Boom 2025 party, Tuchola, Poland
+; Eire - 40k intro for Boom 2025 party, Tuchola, Poland
 ; Pawel Matusz (Kane/Suspect) 
-; 25/06/2025 - 20/07/2025 Luton/UK - San Diego/US
+; 25/06/2025 - 24/07/2025 Luton/UK - San Diego/US
 
     TTL         "Eire"
 
@@ -222,7 +222,7 @@ setMusicPos:
 
 ; d0 - expected beat (-1: does not matter)
 syncToStrobe:
-		move	d1,-(sp)
+		movem.l	d1/a1,-(sp)
 		lea		beat_strobe(pc),a1
 .noStr:	move	(a1),d1					; actual beat number
 		beq.s	.noStr
@@ -233,7 +233,14 @@ syncToStrobe:
 		clr		(a1)					; clear beat
 		bra		.noStr
 .exit:
-		move	(sp)+,d1
+		movem.l	(sp)+,d1/a1
+		rts
+
+clearStrobe:
+		move.l	a1,-(sp)
+		lea		beat_strobe(pc),a1
+		clr		(a1)					; clear beat
+		move.l	(sp)+,a1
 		rts
 
 ; just reset the relative beat for local counting
@@ -335,6 +342,7 @@ swipeScreenPart:
 ;-----------------------------------------------------------------------
 eirePart:
 		lea		CUSTOM,a0
+
 		lea		logo_Eire,a1
 		lea		copper_eire_logo_bpls,a2
 		moveq	#EIRE_BPL-1,d0
@@ -346,17 +354,25 @@ eirePart:
 		bsr		vBlank
 
 		moveq	#1,d0
-		bsr		syncToStrobe						; sync to first strobe
+		bsr		syncToStrobe					; sync to first strobe
 		bsr		resetRelativeBeat
-		lea		eirePlaySequence(pc),a1			; scroll move procedure to be called from the L3 int
+		lea		eirePlaySequence(pc),a1			; scroll move procedure to be called from the VBL int
 		bsr		intL3ProcSet
+		bsr		clearStrobe
+
+		lea		eireCred1(pc),a1				; show the credits anims while VBL int is handling the logo
+		bsr		eireCredAnim
+		lea		eireCred2(pc),a1
+		bsr		eireCredAnim
+		lea		eireCred3(pc),a1
+		bsr		eireCredAnim
 
 eireMainLoop:
-		bsr		vBlank
-		; bsr		eirePlaySequence
-
-		move	eireFinished(pc),d0
+		move	eireFinished(pc),d0			; wait for the background VBL int sequence to finish
 		beq		eireMainLoop
+
+		lea		copper_eire_cred_1,a1
+		move.l	#-2,(a1)					; finish copper after logo
 
 		bsr		intL3ProcClear				; remove L3 int proc
 
@@ -474,8 +490,440 @@ eireFadeColorsOut:
 .eScalingFact:	dc.w	16
 .eDelay:		dc.w	2
 
-;-------------------------------
 
+;-------------------------------
+; animate credits over 4 beats
+; a1 - pointer to text descriptor
+eireCredAnim:
+		bsr		eirePrintCredits
+		bsr		eireShowCredits
+
+		lea		.eire_cred_ctrl(pc),a6
+		move	#2,(a6)							; flash delay
+		move	#4,2(a6)						; scroll delay
+		move	#3,4(a6)						; move up delay
+
+		moveq	#-1,d0
+		bsr		syncToStrobe					; sync to next strobe
+		bsr		clearStrobe
+
+		moveq	#3,d7
+		moveq	#16,d6							; scaling factor
+.beatLoop:
+		VBLANKNL	$20
+		lea		beat_strobe(pc),a2
+		move	(a2),d1							; actual beat number
+		bne		.isBeat
+
+		bsr		.eiraCredActions
+		bra		.beatLoop
+
+.isBeat:
+		cmpi	#1,d7
+		beq		.noColRes
+		moveq	#16,d6							; reset scaling factor
+
+		moveq	#0,d0
+		lea		copper_eire_cred_1,a3
+		bsr		.scrollCredReset
+		moveq	#1,d0
+		lea		copper_eire_cred_2,a3
+		bsr		.scrollCredReset
+		moveq	#2,d0
+		lea		copper_eire_cred_3,a3
+		bsr		.scrollCredReset
+.noColRes:
+		bsr		clearStrobe
+		subq	#1,d7
+		bne		.beatLoop
+
+		; fade out at the end before the next beat
+		moveq	#10,d7
+.fadeoutLoop:
+		VBLANKNL	$20
+		bsr		.eiraCredActions
+		dbf		d7,.fadeoutLoop
+
+		rts
+
+
+; inner action sequence
+.eiraCredActions:
+		; colour fade
+		subi	#1,(a6)
+		bne		.ncd
+		move	#2,(a6)							; fade every 2 frames
+		moveq	#0,d0
+		lea		copper_eire_cred_1,a3
+		bsr		.fadeColsCred
+		moveq	#1,d0
+		lea		copper_eire_cred_2,a3
+		bsr		.fadeColsCred
+		moveq	#2,d0
+		lea		copper_eire_cred_3,a3
+		bsr		.fadeColsCred
+		tst		d6
+		beq		.ncd
+		subi	#1,d6							; decrease colour
+.ncd:
+		; scroll
+		subi	#1,2(a6)
+		bne		.nsc
+		move	#4,2(a6)							; scroll sideways every 2 frames
+		moveq	#0,d0
+		lea		copper_eire_cred_1,a3
+		bsr		.scrollCred
+		moveq	#1,d0
+		lea		copper_eire_cred_2,a3
+		bsr		.scrollCred
+		moveq	#2,d0
+		lea		copper_eire_cred_3,a3
+		bsr		.scrollCred
+.nsc:
+		; move up
+		subi	#1,4(a6)
+		bne		.nmv
+		move	#3,4(a6)
+		bsr		.moveCredUp
+.nmv:	rts
+
+.eire_cred_ctrl:	dc.w	0,0,0
+
+; a1 - pointer to text descriptor
+; a3 - copper cred part
+; d0 - line index in descriptor
+; d6 - scaling factor (0-16 inclusive)
+.fadeColsCred:
+		movem.l	ALL,-(sp)
+		mulu	#10,d0							; find clolr tab
+		lea		EE_cols(a1,d0.w),a2				; colours tab - nr of colours (4) + colour values
+		lea		EC_cols(a3),a1
+		move	d6,d0
+		bsr		scaleColors
+		movem.l	(sp)+,ALL
+		rts
+
+; a1 - pointer to text descriptor
+; a3 - copper cred part
+; d0 - line index in descriptor
+.scrollCred:
+		move.b	EE_scr_step(a1,d0.w),d1			; scroll step
+		move.b	EC_scroll+3(a3),d2
+		add.b	d1,d2
+		move.b	d2,EC_scroll+3(a3)
+		rts
+
+; a1 - pointer to text descriptor
+; a3 - copper cred part
+; d0 - line index in descriptor
+.scrollCredReset:
+	; rts
+		move.b	EE_scr_start(a1,d0.w),EC_scroll+3(a3)			; scroll step
+		rts
+
+; a1 - pointer to text descriptor
+.moveCredUp:
+		movem.l	ALL,-(sp)		
+		moveq	#1,d0
+		lea		copper_eire_cred_1,a3
+		sub.b	d0,EC_y_start(a3)
+		sub.b	d0,EC_y_stop(a3)
+		move.l	#(COLOR04<<16),EC_filler1(a3)
+		move.l	#(COLOR04<<16),EC_filler2(a3)
+		lea		copper_eire_cred_2,a4
+		sub.b	d0,EC_y_start(a4)
+		sub.b	d0,EC_y_stop(a4)
+		move.l	#(COLOR04<<16),EC_filler1(a4)
+		move.l	#(COLOR04<<16),EC_filler2(a4)
+		lea		copper_eire_cred_3,a5
+		sub.b	d0,EC_y_start(a5)
+		sub.b	d0,EC_y_stop(a5)
+		move.l	#(COLOR04<<16),EC_filler1(a5)
+		move.l	#(COLOR04<<16),EC_filler2(a5)
+	
+		moveq	#$40,d0
+		moveq	#0,d1
+		move.b	EC_y_stop(a3),d1
+		cmp		d0,d1
+		bge		.mc2
+		move.l	#$ffdffffe,EC_filler1(a3)
+		bra		.exit
+.mc2:
+		move.b	EC_y_start(a4),d1
+		cmp		d0,d1
+		bge		.mc3
+		move.l	#$ffdffffe,EC_filler2(a3)
+		bra		.exit
+.mc3:
+		move.b	EC_y_stop(a4),d1
+		cmp		d0,d1
+		bge		.mc4
+		move.l	#$ffdffffe,EC_filler1(a4)
+		bra		.exit
+.mc4:
+		move.b	EC_y_start(a5),d1
+		cmp		d0,d1
+		bge		.mc5
+		move.l	#$ffdffffe,EC_filler2(a4)
+		bra		.exit
+.mc5:
+		move.b	EC_y_stop(a5),d1
+		cmp		d0,d1
+		bge.b	.mc6
+		move.l	#$ffdffffe,EC_filler1(a5)
+		bra		.exit
+.mc6:
+		move.l	#$ffdffffe,EC_filler2(a5)
+.exit:
+
+		movem.l	(sp)+,ALL
+		rts
+		
+;-------------------------------
+; print 3 credits into their memory buffers
+; a1 - pointer to text descryptor
+eirePrintCredits:
+		movem.l	d0/a2,-(sp)
+		move.l	#Eire_cred_line_1,a2
+		moveq	#0,d0
+		bsr		eirePrintText
+
+		move.l	#Eire_cred_line_2,a2
+		moveq	#1,d0
+		bsr		eirePrintText
+
+		move.l	#Eire_cred_line_3,a2
+		moveq	#2,d0
+		bsr		eirePrintText
+		movem.l	(sp)+,d0/a2
+		rts
+
+; show all 3 credits
+; a1 - pointer to text descryptor
+eireShowCredits:
+		movem.l	d0/a2/a3,-(sp)
+		move.l	#Eire_cred_line_1,a2
+		lea		copper_eire_cred_1,a3
+		moveq	#0,d0
+		bsr		eireShowLineCred
+
+		move.l	#Eire_cred_line_2,a2
+		lea		copper_eire_cred_2,a3
+		moveq	#1,d0
+		bsr		eireShowLineCred
+
+		move.l	#Eire_cred_line_3,a2
+		lea		copper_eire_cred_3,a3
+		moveq	#2,d0
+		bsr		eireShowLineCred
+
+		movem.l	(sp)+,d0/a2/a3
+		rts
+
+; a1 - pointer to text descryptor
+; a2 - buffer offset (e.g. Eire_cred_line_1)
+; a3 - copper addr
+; d0 - index in the descriptor (0-2)
+eireShowLineCred:
+		movem.l	d0-d3/a1-a3,-(sp)
+
+		move.l	mem_bss_chip(pc),d2				; set bpl addr
+		add.l	a2,d2
+		addi.l	#2*EIRE_CRED_W,d2
+		move	d2,6(a3)
+		swap	d2
+		move	d2,2(a3)
+		swap	d2
+		subi.l	#2*EIRE_CRED_W,d2
+		move	d2,8+6(a3)
+		swap	d2
+		move	d2,8+2(a3)
+
+		move.b	EE_scr_start(a1,d0.w),d1		; initial scroll
+		move.b	d1,EC_scroll+3(a3)
+
+		move.b	EE_x(a1),d1						; DDFSTRT / STOP
+		move.b	d1,EC_x+3(a3)
+		addi.b	#$78,d1							; fixed 16 words wide
+		move.b	d1,EC_x+3+4(a3)
+
+		moveq	#0,d1
+		move.b	EE_y(a1),d1						; Y start
+		move	d0,d2
+		mulu	#EIRE_CRED_H+1,d2				; start based on indexed line
+		add		d1,d2
+		andi	#$1ff,d2
+		move	d2,d1
+		move.b	d1,EC_y_start(a3)				; start and stop scanlines
+		addi	#EIRE_CRED_H-2,d2
+		move.b	d2,EC_y_stop(a3)
+
+		cmpi	#$ff,d1
+		ble		.low_start
+.colf:	move.l	#(COLOR04<<16),EC_filler1(a3)
+		bra		.cont1
+.low_start:
+		cmpi	#$ff,d2
+		ble		.colf
+		move.l	#$ffdffffe,EC_filler1(a3)
+.cont1:
+		move.l	#(COLOR04<<16),EC_filler2(a3)
+
+		movem.l	(sp)+,d0-d3/a1-a3
+		rts
+
+	RSRESET
+	EC_bpl:			rs.l	4
+	EC_scroll:		rs.l	1
+	EC_x:			rs.l	2
+	EC_cols:		rs.l	4
+	EC_y_start:		rs.l	2
+	EC_filler1:		rs.l	1
+	EC_y_stop:		rs.l	2
+	EC_filler2:		rs.l	1
+
+; copper_eire_cred_1:
+; 		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0
+; 		dc.w	BPLCON1, $08
+; 		dc.w	DDFSTRT, $0048, DDFSTOP, $00c0
+; 		dc.w	COLOR00,0,COLOR01,$fff,COLOR02,$444,COLOR03,$fff
+; 		dc.w	(EIRE_CRED_Y0)<<8+$01,$fffe, BPLCON0, $2200
+; 		dc.w	COLOR04,0
+; 		dc.w	(EIRE_CRED_Y0+EIRE_CRED_H)<<8+$01,$fffe, BPLCON0, $0200
+; 		dc.w	COLOR04,0
+
+EIRE_CRED_CHARS = 16								; len of 1 credits line in characters
+EIRE_CRED_W = 2*EIRE_CRED_CHARS
+EIRE_CRED_H = 19									; 15 + 2 rows above and below
+EIRE_CRED_Y0 = $e8
+
+	RSRESET
+	EE_txt:			rs.b	EIRE_CRED_CHARS*3
+	EE_xofs:		rs.b	3
+	EE_x:			rs.b	1
+	EE_y:			rs.b	1
+	EE_scr_start:	rs.b	3
+	EE_scr_step:	rs.b	3
+	EE_filler:		rs.b	1
+	EE_cols:		rs.w	5*3
+
+eireCred1:		dc.b	"    CODE        "
+				dc.b	"    KANE        "
+				dc.b	"  SUSPECT       "
+				dc.b	0,0,8							; offsets in pixels for the lines
+				dc.b	$28,$d8							; x,y positions
+				dc.b	$10,$10,$10							; start scroll
+				dc.b	$00,$10,$10						; scroll step
+				dc.b	0
+				dc.w	4,0,$ddd,$666,$ddd 
+				dc.w	4,0,$fb6,$752,$fb6
+				dc.w	4,0,$fb6,$752,$fb6
+
+eireCred2:		dc.b	"    GRAPHICS    "
+				dc.b	"      SIM       "
+				dc.b	"    SCOOPEX     "
+				dc.b	0,8,8
+				dc.b	$48,$ce							; x,y positions
+				dc.b	$10,$10,$10							; start scroll
+				dc.b	$00,$10,$10						; scroll step
+				dc.b	0
+				dc.w	4,0,$ddd,$666,$ddd
+				dc.w	4,0,$fb6,$752,$fb6
+				dc.w	4,0,$fb6,$752,$fb6
+				; dc.w	4,0,$fff,$666,$fff 
+				; dc.w	4,0,$8f5,$482,$8f5
+				; dc.w	4,0,$8f5,$482,$8f5
+
+eireCred3:		dc.b	"       MUSIC    "
+				dc.b	"      BARTESEK  "
+				dc.b	"      CASYOPEA  "
+				dc.b	8,0,0
+				dc.b	$60,$d4							; x,y positions
+				dc.b	$10,$10,$10							; start scroll
+				dc.b	$00,$10,$10						; scroll step
+				dc.b	0
+				dc.w	4,0,$ddd,$666,$ddd
+				dc.w	4,0,$fb6,$752,$fb6
+				dc.w	4,0,$fb6,$752,$fb6
+				; dc.w	4,0,$fff,$666,$fff 
+				; dc.w	4,0,$eae,$313,$eae
+				; dc.w	4,0,$eae,$313,$eae
+
+	EVEN
+
+;-------------
+; a1 - pointer to text descryptor
+; a2 - buffer offset (e.g. Eire_cred_line_1)
+; d0 - text index (0-2)
+eirePrintText:
+		movem.l	d0-d4/a1-a6,-(sp)
+		lea 	font_16_15_1,a3
+		move.l	mem_bss_chip(pc),d1
+		move.l	a2,a6					; save orig buffer
+
+		moveq	#0,d3
+		move.b	EE_xofs(a1,d0.w),d3		; x offset (basically 0 or 8)
+		beq		.oZero
+		move.l	#Eire_cred_spare,a2
+		adda.l	d1,a2					; of offset not 0 then render into spare buffer and later move using blitter
+		bra		.oNZ
+.oZero:
+		adda.l	d1,a2					; otherwise render straight to destination
+.oNZ
+
+		move	d0,d1
+		lsl		#4,d1					; *16 to get the start of the text
+		lea		(a1,d1.w),a4
+		moveq	#0,d1
+		moveq	#EIRE_CRED_CHARS-1,d2
+.parseTxt:
+		moveq	#0,d0
+		move.b	(a4)+,d0				; get char
+		subi.b	#32,d0
+		lsl		d0						; letters are 2 bytes wide
+		lea		(a3,d0.w),a5			; start of letter
+		move	d1,0*EIRE_CRED_W(a2)
+		move	d1,1*EIRE_CRED_W(a2)
+		; lea		2*EIRE_CRED_W(a2),a2
+		.OA:	SET 0
+		.OB:	SET (2*EIRE_CRED_W)
+		REPT	15
+		move	.OA(a5),.OB(a2)					; copy 1 word of the letter
+		.OA:	SET .OA+BANNER_FNT_CHARS*2
+		.OB: 	SET	.OB+EIRE_CRED_W
+		ENDR
+		move	d1,17*EIRE_CRED_W(a2)			; clear also last 2 rows
+		move	d1,18*EIRE_CRED_W(a2)
+		lea		2(a2),a2							; move to next pos in target buffer
+		dbf		d2,.parseTxt
+
+
+		tst.b	d3								; need to blit into position?
+		beq		.noBlit
+
+		lea		CUSTOM,a0
+		move.l	mem_bss_chip(pc),d1
+		move.l	#Eire_cred_spare,a2
+		adda.l	d1,a2
+		adda.l	d1,a6
+		ror.w	#4,d3
+		ori		#$09f0,d3
+
+		WAITBLIT
+		move.l	#-1,BLTAFWM(a0)					; blitter config part that does not change
+		move	#0,BLTAMOD(a0)
+		move	#0,BLTDMOD(a0)
+		move	#0,BLTCON1(a0)
+
+		move.l	a2,BLTAPT(a0)
+		move	d3,BLTCON0(a0)
+		move.l	a6,BLTDPT(a0)
+		move	#(EIRE_CRED_H<<6)+(EIRE_CRED_W/2),BLTSIZE(a0)
+		WAITBLIT
+
+.noBlit:
+		movem.l	(sp)+,d0-d4/a1-a6
+		rts
 
 
 ;-----------------------------------------------------------------------
@@ -2806,7 +3254,7 @@ copper_blank_purple:
 
 ; ----------- Eire screen copperlist
 copper_eire:
-		dc.w	BPLCON0, $0200  										 ; 0 bitplanes
+		dc.w	BPLCON0, $0200, BPLCON1, $0000 							 ; 0 bitplanes, no scroll
 ;		dc.w	DIWSTRT, $6Ce1, DIWSTOP, $0061
 		dc.w	DIWSTRT, $2C81, DIWSTOP, $2cC1
 		dc.w	DDFSTRT, $0068, DDFSTOP, $00a0
@@ -2822,10 +3270,37 @@ EIRE_LOGO_Y1 = $aa		; $60 high picture
 copper_eire_logo_bplcon:
 		dc.w	(EIRE_LOGO_Y0+$22)<<8+$01,$fffe, BPLCON0, $4200
 		dc.w	(EIRE_LOGO_Y1+$22)<<8+$01,$fffe, BPLCON0, $0200
-		; dc.w	$6c01,$fffe, BPLCON0, $4200
-		; dc.w	$cc01,$fffe, BPLCON0, $0200
-		; dc.w	$8c01,$fffe, BPLCON0, $4200
-		; dc.w	$ec01,$fffe, BPLCON0, $0200
+		dc.w	BPL1MOD,0, BPL2MOD,0
+
+copper_eire_cred_1:
+		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0
+		dc.w	BPLCON1, $08
+		dc.w	DDFSTRT, $0048, DDFSTOP, $00c0
+		dc.w	COLOR00,0,COLOR01,0,COLOR02,0,COLOR03,0
+		dc.w	(EIRE_CRED_Y0)<<8+$01,$fffe, BPLCON0, $2200
+		dc.w	COLOR04,0
+		dc.w	(EIRE_CRED_Y0+EIRE_CRED_H)<<8+$01,$fffe, BPLCON0, $0200
+		dc.w	COLOR04,0
+
+copper_eire_cred_2:
+		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0
+		dc.w	BPLCON1, $08
+		dc.w	DDFSTRT, $0048, DDFSTOP, $00c0
+		dc.w	COLOR00,0,COLOR01,0,COLOR02,0,COLOR03,0
+		dc.w	((EIRE_CRED_Y0+EIRE_CRED_H+1)%256)<<8+$01,$fffe, BPLCON0, $2200
+		dc.w	$ffdf,$fffe
+		dc.w	((EIRE_CRED_Y0+(2*EIRE_CRED_H+1))%256)<<8+$01,$fffe, BPLCON0, $0200
+		dc.w	COLOR04,0
+
+copper_eire_cred_3:
+		dc.w	BPL1PTH,0,BPL1PTL,0,BPL2PTH,0,BPL2PTL,0
+		dc.w	BPLCON1, $08
+		dc.w	DDFSTRT, $0048, DDFSTOP, $00c0
+		dc.w	COLOR00,0,COLOR01,0,COLOR02,0,COLOR03,0
+		dc.w	((EIRE_CRED_Y0+(2*EIRE_CRED_H+2))%256)<<8+$01,$fffe, BPLCON0, $2200
+		dc.w	COLOR04,0
+		dc.w	((EIRE_CRED_Y0+(3*EIRE_CRED_H+2))%256)<<8+$01,$fffe, BPLCON0, $0200
+		dc.w	COLOR04,0
 		dc.l	-2
 
 ; ----------- L systems copperlist
@@ -2835,7 +3310,7 @@ copper_lsys:
 		dc.w	DDFSTRT, $0048, DDFSTOP, $00C0
 		dc.w	BPL1MOD,0, BPL2MOD,0,COLOR15,$0cc7
 copper_lsys_cols:
-;		dc.w	COLOR00,BC_PURPLE,COLOR01,$0652,COLOR02,$0762,COLOR03,$0984,COLOR04,$0652,COLOR05,$0762,COLOR06,$0984,COLOR07,$0aa6
+;		dc.w	COLOR00,BC_PURPLE,COLOR01,$0652,COLOR02,$0762,COLOR03,$0984,COLOR04,$0652,COLOR05,$0762,COLOR06,$0984,COLOR07,$0b61
 ;		dc.w	COLOR08,$0541,COLOR09,$0642,COLOR10,$0752,COLOR11,$0974,COLOR12,$0642,COLOR13,$0752,COLOR14,$0974,COLOR15,$0dd9
 		dc.w	COLOR00,BC_PURPLE,COLOR01,$0311,COLOR02,$0623,COLOR03,$0a56,COLOR04,$0412,COLOR05,$0734,COLOR06,$0956,COLOR07,$0b89
 		dc.w	COLOR08,$0411,COLOR09,$0311,COLOR10,$0623,COLOR11,$0a56,COLOR12,$0412,COLOR13,$0734,COLOR14,$0956,COLOR15,$0dbb
@@ -3022,6 +3497,7 @@ SCROLL_CHARS = 60
 	Logo_trans_buffer:			rs.b	LOGO_SIZE*(LOGO_TRANS_NR-2)
 	LS_Screen2:					rs.b	LSYS_X*LSYS_Y
 	BSS_CHIP_2:					rs.w	0
+LS_Screen1 = Logo_screen1
 
 	RSSET Scroll_buffer			; vasm refuses to start with LS_Screen2
 	Scroll_buffer_temp:			rs.b	SCROLL_LEN*2*SCROLL_Y
@@ -3029,7 +3505,13 @@ SCROLL_CHARS = 60
 	Banner_buffer:				rs.b	BANNER_X*BANNER_Y
 	BSS_CHIP_3:					rs.w	0
 
-LS_Screen1 = Logo_screen1
+	RSRESET
+	Eire_cred_line_1:			rs.b	EIRE_CRED_W*EIRE_CRED_H
+	Eire_cred_line_2:			rs.b	EIRE_CRED_W*EIRE_CRED_H
+	Eire_cred_line_3:			rs.b	EIRE_CRED_W*EIRE_CRED_H
+	Eire_cred_spare:			rs.b	EIRE_CRED_W*EIRE_CRED_H
+	BSS_CHIP_4:					rs.w	0
+
 
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_1
 	ifgt BSS_CHIP_2-BSS_CHIP_ALLOC_MAX
@@ -3038,10 +3520,14 @@ BSS_CHIP_ALLOC_MAX set BSS_CHIP_2
 	ifgt BSS_CHIP_3-BSS_CHIP_ALLOC_MAX
 BSS_CHIP_ALLOC_MAX set BSS_CHIP_3	
 	endif
+	ifgt BSS_CHIP_4-BSS_CHIP_ALLOC_MAX
+BSS_CHIP_ALLOC_MAX set BSS_CHIP_4
+	endif
 
 	echo 		"BSS CHIP 1: ", BSS_CHIP_1
 	echo 		"BSS CHIP 2: ", BSS_CHIP_2
 	echo 		"BSS CHIP 3: ", BSS_CHIP_3
+	echo 		"BSS CHIP 4: ", BSS_CHIP_4
 
 	ds.b		BSS_CHIP_ALLOC_MAX
 
