@@ -1,10 +1,12 @@
 # Amiga-Eire
-Eire: 40k intro by Suspect and Scoopex (and Casyopea)  
+Amiga 500 OCS 40k intro by Suspect and Scoopex (and Casyopea)  
 Code: Kane / Suspect  
 Graphics: Sim / Scoopex  
 Music: Bartesek / Casyopea  
 
 Ranked #2 in the 40k Amiga 500 intro category at Boom! party 2025
+
+Requires off the shelf Amiga 500 OCS with 0.5 MB Chip and 0.5 MB other memory to run. Can run on 0.5 MB Chip only if nothing else is loaded.
 
 # How to build and run
 - Load workspace into Visual Studio Code
@@ -19,3 +21,10 @@ Additionally you can press Ctrl-Shift-B to show the list of tasks configured in 
 - 'shrink runs' shrinkler (embedded in the project) to pack the executable (it also adds the .exe extension)
 - 'prepare assets' runs a batch script preparing some of the assets - converting .iff and .mod files to what the intro requires. This has to be done only once.
 
+# Acknowledgements
+
+This project uses (all executables embedded in the project):
+- Light Speed Player (LSPlayer): https://github.com/arnaud-carre/LSPlayer
+- Shrinkler: https://github.com/askeksa/Shrinkler
+- Iff to raw bitplane converter: https://github.com/pawelmat/Iff2Bpl
+ 
