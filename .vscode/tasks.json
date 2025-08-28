@@ -91,7 +91,7 @@
 			"label": "amigaassembly: build_release_nolinker",
 			"group": {
 				"kind": "build",
-				"isDefault": true
+				"isDefault": false
 			}
 		},
 		{
@@ -101,7 +101,7 @@
             "args": ["-v","${workspaceFolder}/uae/dh0/eire","${workspaceFolder}/build/eire"],
 			"group": {
 				"kind": "build",
-				"isDefault": true
+				"isDefault": false
 			}
         },
 		{
