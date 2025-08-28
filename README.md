@@ -1,8 +1,8 @@
 # Amiga-Eire
-Eire: 40k intro by Suspect and Scoopex (and Casyopea)
-Code: Kane / Suspect
-Graphics: Sim / Scoopex
-Music: Bartesek / Casyopea
+Eire: 40k intro by Suspect and Scoopex (and Casyopea)  
+Code: Kane / Suspect  
+Graphics: Sim / Scoopex  
+Music: Bartesek / Casyopea  
 
 Ranked #2 in the 40k Amiga 500 intro category at Boom! party 2025
 
