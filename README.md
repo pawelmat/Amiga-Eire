@@ -8,6 +8,12 @@ Ranked #2 in the 40k Amiga 500 intro category at Boom! party 2025
 
 Requires off the shelf Amiga 500 OCS with 0.5 MB Chip and 0.5 MB other memory to run. Can run on 0.5 MB Chip only if nothing else is loaded.
 
+# Links
+Youtube: https://www.youtube.com/watch?v=SdhNNyu8srQ  
+Demozoo: https://demozoo.org/productions/375338/  
+Pouet: https://www.pouet.net/prod.php?which=104578  
+Download party version: https://ftp.untergrund.net/users/sim/scena/amiga/40k/sct_&_scx/eire/eire_by_sct_&_scx.zip 
+
 # How to build and run
 - Load workspace into Visual Studio Code
 - Install the Amiga Assembly extension. Default setting should be fine although you might want to provide your own licensed Kickstart 1.3
@@ -26,5 +32,5 @@ Additionally you can press Ctrl-Shift-B to show the list of tasks configured in 
 This project uses (all executables embedded in the project):
 - Light Speed Player (LSPlayer): https://github.com/arnaud-carre/LSPlayer
 - Shrinkler: https://github.com/askeksa/Shrinkler
-- Iff to raw bitplane converter: https://github.com/pawelmat/Iff2Bpl
+- Iff to raw bitplane converter (that's mine!): https://github.com/pawelmat/Iff2Bpl
  
