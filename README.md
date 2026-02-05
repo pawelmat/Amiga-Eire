@@ -16,7 +16,7 @@ Download party version: https://ftp.untergrund.net/users/sim/scena/amiga/40k/sct
 
 # How to build and run
 - Load workspace into Visual Studio Code
-- Install the Amiga Assembly extension. Default setting should be fine although you might want to provide your own licensed Kickstart 1.3
+- Install the Amiga Assembly extension. Default setting should be fine although you might want to provide your own licensed Kickstart 1.3 (this is done in the launch.json file)
 - Press F5 to assemble and run in the embedded WinUAE. Uses vlink and vasmm68k_mot from VASM (embedded in the extension)
 
 The output files are created in uae/dh0 which is automatically mapped as DH0 in the UAE embedded in the extension. 
